@@ -106,6 +106,18 @@ pub fn codegen_run(
     clean_generated_files(&example_dir, example);
 
     let output_format = format_label(emit_nvvm_ir);
+    // Target precedence for `cargo oxide run` (highest first):
+    //   1. --arch <sm_XX>           explicit user override
+    //   2. CUDA_OXIDE_TARGET=<sm_XX>  explicit env override (set by parent process)
+    //   3. Host GPU compute capability detected from CUDA device 0
+    //   4. Backend feature-based default (`select_target` in mir-importer)
+    //
+    // (3) is the auto-detect added here so the generated module can load on
+    // the local GPU. We only do it for `run`, not `build`/`pipeline`, because
+    // `run` immediately loads the cubin on device 0 — whereas the other
+    // commands may be cross-compiling for a different machine.
+    let detected_run_arch = detect_run_target_arch(arch, emit_nvvm_ir);
+    let forwarded_arch = arch.or(detected_run_arch.as_deref());
 
     println!("=========================================");
     println!("RUSTC-CODEGEN-CUDA: {}", example);
@@ -148,7 +160,7 @@ pub fn codegen_run(
     forward_env_var(&mut cmd, "CUDA_OXIDE_DUMP_MIR");
     forward_env_var(&mut cmd, "CUDA_OXIDE_DUMP_LLVM");
 
-    apply_output_mode(&mut cmd, emit_nvvm_ir, arch);
+    apply_output_mode(&mut cmd, emit_nvvm_ir, forwarded_arch);
     apply_ld_library_path(&mut cmd);
 
     if let Some(bin) = bin {
@@ -831,6 +843,70 @@ fn apply_output_mode(cmd: &mut Command, emit_nvvm_ir: bool, arch: Option<&str>) 
     }
 }
 
+/// Pick a runnable target for `cargo oxide run` when the user has not pinned
+/// one explicitly.
+///
+/// # Precedence
+///
+/// `cargo oxide run` resolves the target architecture in this order, highest
+/// priority first:
+///
+/// 1. `--arch <sm_XX>`            — explicit user override
+/// 2. `CUDA_OXIDE_TARGET=<sm_XX>` — explicit env override (set in the parent
+///    process before invoking `cargo oxide run`)
+/// 3. **This function** — host GPU compute capability of CUDA device 0
+/// 4. Backend feature-based default (`select_target` in
+///    `mir-importer::pipeline`), which picks the minimum `sm_XX` required by
+///    the IR shape (e.g. `Basic → sm_80`, `Cluster → sm_90`, `Tma → sm_100`)
+///
+/// This function returns `Some(sm_XY)` to fill slot 3, or `None` (falling
+/// through to slot 4) when the host has no usable GPU.
+///
+/// # Why only `run`
+///
+/// `run` immediately loads the generated module on device 0 and launches the
+/// kernel, so a target older than the local GPU's compute capability is the
+/// only safe default. `build` and `pipeline` may legitimately cross-compile
+/// to a different machine, so they keep the backend's feature-based default
+/// untouched.
+///
+/// # Why this is needed even with the backend default
+///
+/// The backend's `select_target` picks the minimum `sm_XX` the IR requires.
+/// `Basic → sm_80` is a fine *compilation* baseline, but PTX for `sm_80` will
+/// not load on a Turing (`sm_75`) GPU because the JIT refuses
+/// forward-incompatible PTX. Detecting the host CC in `run` keeps the
+/// generated module loadable on the actual hardware that will execute it.
+///
+/// # When this returns `None`
+///
+/// - The user passed `--arch` (slot 1 wins).
+/// - `CUDA_OXIDE_TARGET` is set in the environment (slot 2 wins).
+/// - `--emit-nvvm-ir` is in effect (NVVM IR mode requires explicit `--arch`,
+///   enforced by the CLI parser).
+/// - No CUDA driver / device 0 is available on the host (CI runners without
+///   GPUs, headless build boxes). The caller falls through to slot 4 and
+///   the backend's feature-based default applies.
+fn detect_run_target_arch(arch: Option<&str>, emit_nvvm_ir: bool) -> Option<String> {
+    if arch.is_some() || emit_nvvm_ir || std::env::var_os("CUDA_OXIDE_TARGET").is_some() {
+        return None;
+    }
+
+    cuda_core::CudaContext::new(0)
+        .and_then(|ctx| ctx.compute_capability())
+        .ok()
+        .map(format_sm_arch)
+}
+
+/// Format a `(major, minor)` compute-capability tuple as the `sm_XX` /
+/// `sm_XXX` string the codegen backend expects on `CUDA_OXIDE_TARGET`.
+///
+/// Concatenates without a separator, matching CUDA conventions:
+/// `(7, 5)` → `"sm_75"`, `(12, 0)` → `"sm_120"`.
+fn format_sm_arch((major, minor): (i32, i32)) -> String {
+    format!("sm_{}{}", major, minor)
+}
+
 /// Forward an env var to the child process if it's set in the parent, otherwise remove it.
 fn forward_env_var(cmd: &mut Command, var: &str) {
     if let Ok(val) = std::env::var(var) {
@@ -1236,5 +1312,41 @@ mod tests {
 
         assert_eq!(command_env(&cmd, "CUDA_OXIDE_TARGET"), None);
         assert_eq!(command_env(&cmd, "CUDA_OXIDE_EMIT_NVVM_IR"), None);
+    }
+
+    #[test]
+    fn format_sm_arch_uses_cuda_target_spelling() {
+        assert_eq!(format_sm_arch((7, 5)), "sm_75");
+        assert_eq!(format_sm_arch((12, 0)), "sm_120");
+        // sm_90a / sm_100a etc. are not produced by this helper because
+        // compute_capability() returns plain integers; the `a` suffix is
+        // applied by the backend's feature selector when arch-specific
+        // tcgen05 / wgmma intrinsics are used.
+    }
+
+    #[test]
+    fn detect_run_target_arch_skips_when_arch_explicit() {
+        // --arch wins; never query the GPU.
+        assert_eq!(detect_run_target_arch(Some("sm_120"), false), None);
+    }
+
+    #[test]
+    fn detect_run_target_arch_skips_when_emit_nvvm_ir() {
+        // NVVM IR mode requires explicit --arch; auto-detect must not run.
+        assert_eq!(detect_run_target_arch(None, true), None);
+    }
+
+    #[test]
+    fn detect_run_target_arch_skips_when_env_target_set() {
+        // Test in isolation; the `CUDA_OXIDE_TARGET` env handle is process-wide.
+        // SAFETY: single-threaded test serialised by the cargo test harness.
+        unsafe {
+            std::env::set_var("CUDA_OXIDE_TARGET", "sm_75");
+        }
+        let result = detect_run_target_arch(None, false);
+        unsafe {
+            std::env::remove_var("CUDA_OXIDE_TARGET");
+        }
+        assert_eq!(result, None);
     }
 }

@@ -51,6 +51,12 @@ cargo oxide setup                   # explicitly build the codegen backend
 
 Builds the codegen backend, compiles the example with the custom backend, and runs it. This is the primary command for day-to-day development.
 
+When neither `--arch` nor `CUDA_OXIDE_TARGET` is set, `run` detects the
+compute capability of CUDA device 0 and targets that architecture so the
+generated PTX can load on the local GPU. Use `--arch <sm_XXX>` or
+`CUDA_OXIDE_TARGET=<sm_XXX>` to override this for a specific device or
+cross-target workflow.
+
 ```bash
 cargo oxide run vecadd
 cargo oxide run gemm_sol
