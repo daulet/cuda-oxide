@@ -180,6 +180,7 @@ compiler/fuzzing-and-differential-testing
 appendix/building-from-source
 appendix/api-quick-reference
 appendix/supported-features
+appendix/roadmap
 appendix/cuda-cpp-comparison
 appendix/ecosystem
 appendix/glossary

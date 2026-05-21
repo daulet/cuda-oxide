@@ -2,7 +2,9 @@
 
 This appendix presents the cuda-oxide feature matrix: every compiler capability,
 runtime API, and hardware feature along with its current support status. The
-data is drawn from the compiler/runtime sources and the test suite.
+data is drawn from the compiler/runtime sources and the test suite. Capability
+gaps that are larger than a simple feature-table row are tracked separately in
+the [capability roadmap](roadmap.md).
 
 **Legend:** **Full** = tested and working, **Partial** = ships and works but
 has a known gap (called out in the row description), **Planned** = on the
