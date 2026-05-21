@@ -22,6 +22,9 @@ The workspace combines:
 
 cuda-oxide is an experimental compiler that demonstrates how CUDA SIMT kernels can be written natively in pure Rust -- no DSLs, no foreign language bindings -- and made available to the broader Rust community. The project is in an early stage (alpha) and under active development: you should expect bugs, incomplete features, and API breakage as we work to improve it. That said, we hope you'll try it in your own work and help shape its direction by sharing feedback on your experience.
 
+See [PRINCIPLES.md](PRINCIPLES.md) for a consolidated statement of the project's
+guiding principles and values.
+
 Please see [CONTRIBUTING.md](CONTRIBUTING.md) if you're interested in contributing to the project.
 
 ## Quick Start
