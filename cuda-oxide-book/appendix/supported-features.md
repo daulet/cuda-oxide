@@ -116,6 +116,13 @@ roadmap, **N/A** = not applicable or no identified need.
 | cuBLAS strided-batched SGEMM | **Full** | `sgemm_strided_batched` supports packed or caller-specified row-major batches with validated element strides and buffer lengths. |
 | Library/kernel stream composition | **Full** | The `cublas_gemm` example runs cuBLAS work and a Rust-authored kernel on the same stream, then validates results against CPU references. |
 
+## Runtime Library: Selection
+
+| Feature | Status | Description |
+|:--------|:-------|:------------|
+| Fixed-capacity top-k | **Full** | `TopKEntry` and `TopK<K>` provide deterministic ordering: higher score first, lower index for ties, and NaN last. |
+| Block-cooperative row top-k | **Full** | `block_topk_f32<K, BLOCK_THREADS>` scans one row with a 1D thread block and caller-provided `SharedArray<TopK<K>, BLOCK_THREADS>` scratch. The `topk_select` example validates multi-row selection with ties on B300 hardware. |
+
 ## Runtime Library: Atomics
 
 | Feature | Status | Description |

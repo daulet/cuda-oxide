@@ -11,7 +11,7 @@
   │                                             │
   │  thread     warp       barrier     cusimd   │  Universal
   │  disjoint   shared     atomic      debug    │
-  │  fence      grid       coop_grps            │
+  │  selection  fence      grid       coop_grps │
   │                                             │
   │  mma                                        │  Ampere+
   │  tma        wgmma      stmatrix    cluster  │  Hopper+
@@ -36,6 +36,7 @@
 | `fence`              | `threadfence_block` / `threadfence` / `threadfence_system` memory fences     | All     |
 | `grid`               | Grid-scoped queries and `sync` (cooperative kernel launches only)            | sm_70+  |
 | `cooperative_groups` | Typed group handles (`Grid`/`ThreadBlock`/`WarpTile<N>`/`CoalescedThreads`)  | All     |
+| `selection`          | Deterministic fixed-capacity top-k and block-cooperative row selection       | All     |
 | `barrier`            | `Barrier`, `ManagedBarrier<State, Kind>` -- async mbarrier for TMA           | sm_90+  |
 | `cluster`            | Thread block clusters, DSMEM (`map_shared_rank`), `cluster_sync`             | sm_90+  |
 | `tma`                | `TmaDescriptor`, bulk tensor copies (1D-5D global↔shared, multicast)         | sm_90+  |
@@ -110,6 +111,24 @@ static COUNTER: DeviceAtomicU32 = DeviceAtomicU32::new(0);
 COUNTER.fetch_add(1, AtomicOrdering::Relaxed);
 ```
 
+### Selection
+
+`selection` provides deterministic top-k building blocks for routers, indexers,
+and sparse scheduling kernels. `TopKEntry` orders by higher score first, lower
+index on ties, and NaN last. `block_topk_f32<K, BLOCK_THREADS>` scans one row
+with a whole 1D block and caller-provided `SharedArray<TopK<K>, BLOCK_THREADS>`
+scratch.
+
+```rust
+use cuda_device::{SharedArray, TopK, block_topk_f32};
+use cuda_device::cooperative_groups::this_thread_block;
+
+static mut SCRATCH: SharedArray<TopK<4>, 128> = SharedArray::UNINIT;
+
+let block = this_thread_block();
+let top = block_topk_f32::<4, 128>(&block, scores, row_start, row_len, &raw mut SCRATCH);
+```
+
 ### Tensor Cores and TMA
 
 **TMA** (`tma` module): Hardware DMA via `TmaDescriptor`. Async bulk tensor copies in 1D-5D between global and shared memory, with multicast and CTA-group-2 variants.
@@ -155,7 +174,7 @@ These are defined in `cuda-macros` and re-exported from `cuda-device` for conven
 1. **`ThreadIndex`** -- unconstructible except via trusted functions; guarantees unique indices
 2. **`DisjointSlice::get_mut()`** -- bounds-checked `Option<&mut T>`; `get_unchecked_mut()` is the explicit `unsafe` escape
 3. **`SharedArray` / `DynamicSharedArray`** -- `!Sync`; all access via `static mut` requires `unsafe`
-4. **Barriers, TMA, MMA, WGMMA, tcgen05** -- all `unsafe` functions; caller ensures synchronization semantics
+4. **Selection scratch, barriers, TMA, MMA, WGMMA, tcgen05** -- caller ensures cooperative synchronization and hardware-specific contracts
 5. **Atomics** -- `unsafe impl Sync`; ordering semantics match CUDA scoped atomics
 
 ## Further Reading

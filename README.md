@@ -219,7 +219,7 @@ compiles a Rust kernel to PTX, launches it on the GPU, and prints
 
 ## Examples
 
-**60 examples** in `crates/rustc-codegen-cuda/examples/`. Highlights:
+**61 examples** in `crates/rustc-codegen-cuda/examples/`. Highlights:
 
 | Example              | Description                                                              |
 |----------------------|--------------------------------------------------------------------------|
@@ -228,6 +228,7 @@ compiles a Rust kernel to PTX, launches it on the GPU, and prints
 | `generic`            | Generic kernels with monomorphization (`scale<T>`)                       |
 | `gemm_sol`           | GEMM SoL: 868 TFLOPS (58% cuBLAS on B200), 8 kernels across 4 phases     |
 | `cublas_gemm`        | cuBLAS SGEMM and strided-batched SGEMM composed with a Rust kernel        |
+| `topk_select`        | Block-cooperative deterministic top-k selection with shared scratch       |
 | `warp_mma`           | Warp-scoped `m16n8k16` f16/f32 tensor-core tile, CPU reference checked    |
 | `tcgen05`            | Blackwell tensor cores (sm_100a): TMEM, MMA, cta_group::2                |
 | `atomics`            | GPU atomics: 6 types x 3 scopes x 5 orderings (20 tests)                 |
@@ -242,6 +243,7 @@ compiles a Rust kernel to PTX, launches it on the GPU, and prints
 cargo oxide run vecadd
 cargo oxide run gemm_sol
 cargo oxide run cublas_gemm
+cargo oxide run topk_select
 cargo oxide run warp_mma
 ```
 
@@ -299,6 +301,7 @@ cargo oxide run warp_mma
 - Device FFI: Rust <-> C++/CCCL interop via LTOIR
 - MathDx integration: cuFFTDx thread-level FFT, cuBLASDx block-level GEMM
 - Host runtime: `cuda-core` (explicit control, pinned host transfers, memory residency controls, stream-aware cuBLAS SGEMM) and `cuda-async` (composable async operations)
+- Device selection: `cuda_device::selection` provides fixed-capacity deterministic top-k and block-cooperative row selection with caller-provided shared scratch
 - Warp-scoped tensor-core MMA: `cuda_device::mma` lowers shared-memory `ldmatrix` loads and `m16n8k16` f16/f32 `mma.sync`, with a B300-validated `warp_mma` example
 - GEMM SoL: 868 TFLOPS (58% cuBLAS SoL) on B200 with cta_group::2, CLC, 4-stage pipeline
 

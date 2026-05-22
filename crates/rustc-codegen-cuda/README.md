@@ -114,6 +114,7 @@ The `examples/` directory contains standalone kernel crates that exercise differ
 | `async_mlp`                  | Multi-layer perceptron using async streams           |
 | `sharedmem`                  | Shared memory usage                                  |
 | `dynamic_smem`               | Dynamic shared memory allocation                     |
+| `topk_select`                | Block-cooperative top-k row selection                |
 | `barrier`                    | `__syncthreads` and barrier semantics                |
 | `atomics`                    | Atomic operations on device                          |
 | `printf`                     | Device-side `printf` via FFI                         |

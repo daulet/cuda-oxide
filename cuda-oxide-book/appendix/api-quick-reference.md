@@ -288,6 +288,25 @@ let val = cluster::dsmem_read_u32(remote_ptr);
 
 ---
 
+## Selection
+
+```rust
+use cuda_device::{SharedArray, TopK, block_topk_f32};
+use cuda_device::cooperative_groups::this_thread_block;
+
+static mut SCRATCH: SharedArray<TopK<4>, 128> = SharedArray::UNINIT;
+
+let block = this_thread_block();
+let top = block_topk_f32::<4, 128>(&block, scores, row_start, row_len, &raw mut SCRATCH);
+let best = top.get(0);
+```
+
+`block_topk_f32` scans one row with a 1D block and returns sorted row-local
+`TopKEntry` values to every thread in the block. The caller owns the scratch
+memory, so the temporary footprint is explicit.
+
+---
+
 ## Tensor Cores — Warp MMA (SM 80+)
 
 ```rust
@@ -447,6 +466,7 @@ debug::prof_trigger::<7>();     // Nsight profiler trigger
 | `fence`              | `threadfence_block` / `threadfence` / `threadfence_system`       | All      |
 | `grid`               | Grid-scoped `sync` (cooperative kernel launches)                 | sm_70+   |
 | `cooperative_groups` | Typed handles, warp/block reductions and scans                   | All      |
+| `selection`          | Deterministic top-k and block-cooperative row selection          | All      |
 | `barrier`            | `ManagedBarrier` — async mbarrier for TMA/MMA                    | sm_90+   |
 | `cluster`            | Thread block clusters, DSMEM                                     | sm_90+   |
 | `tma`                | `TmaDescriptor`, bulk tensor copies (1D–5D)                      | sm_90+   |

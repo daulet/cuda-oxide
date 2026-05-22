@@ -83,24 +83,27 @@ functionally, not to reproduce any one CUDA surface area exactly.
 
 ## Scalable Device-Side Selection and Sorting Primitives
 
-Routing and sparse-attention workloads often need fast per-row selection over
-hundreds or thousands of scores. A simple single-thread top-k loop is not enough
-for these cases, and users may otherwise fall back to bespoke external kernels.
+Status: shipped. Routing and sparse-attention workloads often need fast per-row
+selection over hundreds or thousands of scores. A simple single-thread top-k
+loop is not enough for these cases, and users may otherwise fall back to
+bespoke external kernels.
 
-The missing functionality is a supported cuda-oxide path for scalable
-selection-oriented GPU building blocks such as:
+cuda-oxide now provides a supported path for selection-oriented GPU building
+blocks that need:
 
 - per-row top-k selection over large score vectors,
 - deterministic tie-breaking where model semantics require it,
-- block- or warp-cooperative selection, sorting, or equivalent primitives,
-- temporary-memory handling suitable for high-throughput kernels,
+- block-cooperative selection,
+- explicit caller-provided shared-memory scratch,
+- sorted top-k output suitable for downstream routing or sparse scheduling,
 - enough flexibility to support router selection, indexer selection, and other
   sparse scheduling decisions without forcing each project to invent a new
   substrate.
 
-This capability could be satisfied by native primitives, structured interop, or
-another project-consistent design. The important roadmap target is the
-functionality.
+The `cuda_device::selection` module exposes `TopKEntry`, `TopK<K>`, and
+`block_topk_f32<K, BLOCK_THREADS>`. The `topk_select` example validates
+deterministic top-k output for multiple rows with deliberate score ties and
+NaNs on B300 hardware.
 
 ## First-Class Low-Precision Inference Data Types
 

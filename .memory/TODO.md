@@ -100,6 +100,7 @@
      - `PATH=.venv/bin:$PATH make html` in `cuda-oxide-book`: passed.
      - Claude CLI non-interactive review: no blocking issues.
      - Claude CLI non-interactive review: no blocking issues.
+     - Claude CLI non-interactive review: no blocking issues.
 
 ### 2. Production Dense Linear Algebra Integration
 
@@ -312,7 +313,7 @@
 
 ### 4. Scalable Device-Side Selection and Sorting Primitives
 
-- Status: in-progress
+- Status: complete
 - Goal: let cuda-oxide kernels perform deterministic cooperative top-k
   selection over rows large enough to need multiple lanes or a whole block.
 - Source surface: `crates/cuda-device`, examples, README/book/support matrix
@@ -376,10 +377,13 @@
      - Claude CLI non-interactive review: no blocking issues.
 
 3. Docs and roadmap closure
-   - Status: open
+   - Status: complete
    - End-state: README/book/support matrix describe shipped selection support
      and item 4 is marked complete on this board.
-   - Validation: doc/source consistency review plus reviewer gate before commit.
+   - Validation:
+     - Local `cargo fmt --check`: passed.
+     - Local `git diff --check`: passed.
+     - `PATH=.venv/bin:$PATH make html` in `cuda-oxide-book`: passed.
 
 ### 5. First-Class Low-Precision Inference Data Types
 
