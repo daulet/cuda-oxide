@@ -65,10 +65,25 @@
      - Claude CLI non-interactive review: no blocking issues.
 
 3. Example and hardware verification
-   - Status: open
+   - Status: complete
    - End-state: an executable example demonstrates the residency controls on a
      CUDA path, and a B300 validation run proves the relevant runtime behavior.
-   - Validation: reusable B300 pod in `hou2-prod1`, exact command/log capture.
+   - Implementation plan:
+     - add a `memory_residency` `cargo oxide run` example with a raw-pointer
+       kernel so the existing typed launch macro does not need a broader
+       slice-argument refactor;
+     - exercise managed input/output advice, prefetch, and stream attachment,
+       plus mapped host memory and registered existing host memory in the same
+       kernel path;
+     - verify the example on the reusable `default/cuda-oxide-b300` pod and
+       capture the exact command output.
+   - Validation:
+     - `CUDA_HOME=/usr/local/cuda CUDA_OXIDE_LLC=/usr/bin/llc-21 cargo oxide
+       doctor` in the reusable `default/cuda-oxide-b300` pod: passed.
+     - `CUDA_HOME=/usr/local/cuda CUDA_OXIDE_LLC=/usr/bin/llc-21 cargo oxide
+       run memory_residency` in the B300 pod: passed; auto-detected `sm_103`
+       and printed `SUCCESS: memory residency kernel produced 1024 correct
+       elements`.
 
 4. Docs and roadmap closure
    - Status: open
