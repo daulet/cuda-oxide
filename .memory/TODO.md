@@ -353,7 +353,7 @@
      - Claude CLI non-interactive review: no blocking issues.
 
 2. Hardware-validated top-k example
-   - Status: open
+   - Status: complete
    - End-state: a runnable `topk_select` example computes top-k for multiple
      rows, including ties, and validates scores/indices against a CPU
      reference.
@@ -361,7 +361,19 @@
      - launch one block per row with a row length larger than the block size;
      - write sorted top-k `(score, index)` pairs from lane-local ranks;
      - validate all rows on the reusable B300 pod.
-   - Validation: reusable B300 pod in `hou2-prod1`, exact command/log capture.
+   - Validation:
+     - Local `cargo fmt --check`: passed.
+     - Local `cargo fmt --check --manifest-path
+       crates/rustc-codegen-cuda/examples/topk_select/Cargo.toml`: passed.
+     - Local `rustup run nightly cargo check -p cuda-device`: passed.
+     - Local `rustup run nightly cargo test -p cuda-device selection --
+       --nocapture`: passed; 2 selection ordering tests.
+     - Local `git diff --check`: passed.
+     - `CUDA_HOME=/usr/local/cuda CUDA_OXIDE_LLC=/usr/bin/llc-21 cargo oxide
+       run topk_select` in the reusable `default/cuda-oxide-b300` B300 pod:
+       passed; auto-detected `sm_103` and printed `SUCCESS: top-k selection
+       matched CPU reference for 4 rows x 257 scores (K=4)`.
+     - Claude CLI non-interactive review: no blocking issues.
 
 3. Docs and roadmap closure
    - Status: open

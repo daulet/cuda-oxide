@@ -88,7 +88,8 @@ impl<const K: usize> TopK<K> {
     /// Return one selected entry by rank.
     #[inline(always)]
     pub const fn get(&self, rank: usize) -> TopKEntry {
-        self.entries[rank]
+        let entries = self.entries;
+        entries[rank]
     }
 
     /// Insert a candidate and preserve descending top-k order.
@@ -100,9 +101,10 @@ impl<const K: usize> TopK<K> {
     /// Merge another fixed-capacity top-k buffer into this one.
     #[inline(always)]
     pub fn merge(&mut self, other: Self) {
+        let other_entries = other.entries;
         let mut i = 0usize;
         while i < K {
-            self.insert_entry(other.entries[i]);
+            self.insert_entry(other_entries[i]);
             i += 1;
         }
     }
@@ -113,15 +115,17 @@ impl<const K: usize> TopK<K> {
             assert!(K > 0, "TopK requires K > 0");
         }
 
+        let mut entries = self.entries;
         let mut rank = 0usize;
         while rank < K {
-            if candidate.is_better_than(&self.entries[rank]) {
+            if candidate.is_better_than(&entries[rank]) {
                 let mut shift = K - 1;
                 while shift > rank {
-                    self.entries[shift] = self.entries[shift - 1];
+                    entries[shift] = entries[shift - 1];
                     shift -= 1;
                 }
-                self.entries[rank] = candidate;
+                entries[rank] = candidate;
+                self.entries = entries;
                 return;
             }
             rank += 1;

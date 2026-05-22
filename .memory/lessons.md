@@ -39,3 +39,7 @@
   `ldmatrix.x4` A addresses need lanes 0-7/8-15/16-23/24-31 to point at
   top-left, bottom-left, top-right, and bottom-right 8x8 subtiles; `x2.trans`
   B addresses need lanes 0-7 and 8-15 to point at rows 0-7 and 8-15.
+- Device methods that assign through a nested place such as
+  `self.field[index]` can exceed the MIR importer's current complex-place
+  support. Copy the array field into a local, mutate the local array, then
+  assign the whole field back.
