@@ -40,9 +40,11 @@ mod kernels {
         thread::sync_threads();
 
         let lane = (tid & 31) as usize;
-        let a_row = lane & 15;
-        let b_row = lane & 7;
-        let a_ptr = unsafe { (&raw const A_TILE).cast::<u16>().add(a_row * 16) }.cast::<u8>();
+        let a_row = (lane & 7) + ((lane & 8) as usize);
+        let a_col = if lane & 16 == 0 { 0 } else { 8 };
+        let b_row = (lane & 7) + ((lane & 8) as usize);
+        let a_ptr =
+            unsafe { (&raw const A_TILE).cast::<u16>().add(a_row * 16 + a_col) }.cast::<u8>();
         let b_ptr = unsafe { (&raw const B_TILE).cast::<u16>().add(b_row * 8) }.cast::<u8>();
 
         let acc = zero_accumulator();

@@ -34,3 +34,8 @@
 - Rust 2024 rejects taking shared references to `static mut` shared-memory
   tiles. Use `&raw const TILE` and cast that raw pointer before passing row
   addresses to ldmatrix-style intrinsics.
+- Correct warp MMA numerics depend on the per-8x8-submatrix `ldmatrix` address
+  pattern, not just the PTX `mma.sync` accumulator layout. For `m16n8k16`,
+  `ldmatrix.x4` A addresses need lanes 0-7/8-15/16-23/24-31 to point at
+  top-left, bottom-left, top-right, and bottom-right 8x8 subtiles; `x2.trans`
+  B addresses need lanes 0-7 and 8-15 to point at rows 0-7 and 8-15.

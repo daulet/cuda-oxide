@@ -264,7 +264,7 @@
      - Claude CLI non-interactive review: no blocking issues.
 
 2. Hardware-proven warp MMA example
-   - Status: open
+   - Status: complete
    - End-state: a runnable example computes a reference-checked GEMM tile using
      shared-memory staging, repeated warp-level MMA, and register
      accumulation.
@@ -276,7 +276,29 @@
        not only a single instruction;
      - validate output numerically on the B300 pod and inspect generated PTX
        for `ldmatrix` and `mma.sync`.
-   - Validation: reusable B300 pod in `hou2-prod1`, exact command/log capture.
+   - Validation:
+     - Local `cargo fmt --check`: passed.
+     - Local `cargo fmt --check --manifest-path
+       crates/rustc-codegen-cuda/examples/warp_mma/Cargo.toml`: passed.
+     - Local `cargo fmt --check --manifest-path
+       crates/rustc-codegen-cuda/examples/warp_mma_smoke/Cargo.toml`: passed.
+     - Local `rustup run nightly cargo check -p cuda-device`: passed.
+     - Local `rustup run nightly cargo check -p mir-importer`: passed.
+     - Local `git diff --check`: passed.
+     - `CUDA_HOME=/usr/local/cuda CUDA_OXIDE_LLC=/usr/bin/llc-21 cargo oxide
+       run warp_mma` in the reusable `default/cuda-oxide-b300` B300 pod:
+       passed; auto-detected `sm_103` and printed `SUCCESS: warp MMA tile
+       matched CPU reference for 16x8x32; max error 0.000e0`.
+     - `CUDA_HOME=/usr/local/cuda CUDA_OXIDE_LLC=/usr/bin/llc-21 cargo oxide
+       build warp_mma_smoke --arch sm_80` in the B300 pod: passed after
+       switching the smoke example to the same ldmatrix address pattern.
+     - Generated `warp_mma.ptx` contains
+       `ldmatrix.sync.aligned.m8n8.x4.shared.b16`,
+       `ldmatrix.sync.aligned.m8n8.x2.trans.shared.b16`, and
+       `mma.sync.aligned.m16n8k16.row.col.f32.f16.f16.f32`.
+     - `/usr/local/cuda/bin/ptxas --gpu-name sm_103 warp_mma.ptx -o
+       /tmp/warp_mma.cubin` in the B300 pod: passed.
+     - Claude CLI non-interactive review: no blocking issues.
 
 3. Docs and roadmap closure
    - Status: open
