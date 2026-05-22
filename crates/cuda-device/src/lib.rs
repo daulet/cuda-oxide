@@ -22,6 +22,7 @@ pub mod disjoint;
 pub mod fence;
 pub mod grid;
 pub mod mma;
+pub mod selection;
 pub mod shared;
 pub mod tcgen05;
 pub mod thread;
@@ -53,6 +54,7 @@ pub use cusimd::{CuSimd, Float2, Float4, TmemRegs4, TmemRegs32};
 pub use disjoint::DisjointSlice;
 pub use fence::*;
 pub use mma::{MmaAccumulator, MmaOperandA, MmaOperandB};
+pub use selection::{TopK, TopKEntry, block_topk_f32};
 pub use shared::{DynamicSharedArray, SharedArray};
 pub use tcgen05::{
     TensorMemoryHandle, TmemAddress, TmemDeallocated, TmemF32x4, TmemF32x32, TmemGuard, TmemReady,

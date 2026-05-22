@@ -312,8 +312,62 @@
 
 ### 4. Scalable Device-Side Selection and Sorting Primitives
 
-- Status: open
-- Plan: not started. Write a milestone plan before implementation begins.
+- Status: in-progress
+- Goal: let cuda-oxide kernels perform deterministic cooperative top-k
+  selection over rows large enough to need multiple lanes or a whole block.
+- Source surface: `crates/cuda-device`, examples, README/book/support matrix
+  when complete.
+- Required evidence:
+  - per-row top-k selection over row lengths larger than one warp,
+  - deterministic tie-breaking,
+  - block-cooperative execution,
+  - explicit caller-provided temporary memory,
+  - sorted top-k output suitable for routers, indexers, and sparse scheduling,
+  - validation on the reusable B300 pod.
+
+#### Planned milestones
+
+1. Device selection value model and block primitive
+   - Status: complete
+   - End-state: `cuda-device` exposes a compact `selection` module with
+     fixed-capacity top-k entries and a block-cooperative `f32` top-k primitive
+     using caller-provided shared-memory scratch.
+   - Implementation plan:
+     - add `TopKEntry` and `TopK<K>` with higher-score-first ordering,
+       deterministic lower-index tie-breaking, and NaN ranked last;
+     - add `block_topk_f32<K, BLOCK_THREADS>` for one 1D block scanning one
+       row by block-strided loads, merging per-thread top-k values through
+       `SharedArray<TopK<K>, BLOCK_THREADS>` scratch;
+     - cover compile-time constraints and basic API shape with local package
+       checks before hardware validation.
+   - Validation:
+     - Local `cargo fmt --check`: passed.
+     - Local `rustup run nightly cargo check -p cuda-device`: passed.
+     - Local `rustup run nightly cargo test -p cuda-device selection --
+       --nocapture`: passed; 2 selection ordering tests.
+     - Local `git diff --check`: passed.
+     - `CUDA_HOME=/usr/local/cuda cargo fmt --check` in the reusable
+       `default/cuda-oxide-b300` pod on `hou2-prod1`: passed.
+     - `CUDA_HOME=/usr/local/cuda cargo check -p cuda-device` in the B300 pod:
+       passed.
+     - Claude CLI non-interactive review: no blocking issues.
+
+2. Hardware-validated top-k example
+   - Status: open
+   - End-state: a runnable `topk_select` example computes top-k for multiple
+     rows, including ties, and validates scores/indices against a CPU
+     reference.
+   - Implementation plan:
+     - launch one block per row with a row length larger than the block size;
+     - write sorted top-k `(score, index)` pairs from lane-local ranks;
+     - validate all rows on the reusable B300 pod.
+   - Validation: reusable B300 pod in `hou2-prod1`, exact command/log capture.
+
+3. Docs and roadmap closure
+   - Status: open
+   - End-state: README/book/support matrix describe shipped selection support
+     and item 4 is marked complete on this board.
+   - Validation: doc/source consistency review plus reviewer gate before commit.
 
 ### 5. First-Class Low-Precision Inference Data Types
 
