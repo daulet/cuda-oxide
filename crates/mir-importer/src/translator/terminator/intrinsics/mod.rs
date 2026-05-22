@@ -14,6 +14,7 @@
 //! | `sync`      | `sync_threads`, `mbarrier_*`, `fence_*`             |
 //! | `cluster`   | `cluster_ctaidX`, `cluster_sync`, `map_shared_rank` |
 //! | `warp`      | `shuffle_*`, `vote_*`, `lane_id`                    |
+//! | `mma`       | Warp-scoped `ldmatrix` and `mma.sync` operations     |
 //! | `wgmma`     | Hopper WGMMA matrix operations                      |
 //! | `tcgen05`   | Blackwell tensor core (tcgen05) operations          |
 //! | `tma`       | Tensor Memory Access (TMA) operations               |
@@ -43,6 +44,7 @@ pub mod debug;
 pub mod float_math;
 pub mod indexing;
 pub mod memory;
+pub mod mma;
 pub mod saturating;
 pub mod sync;
 pub mod tcgen05;

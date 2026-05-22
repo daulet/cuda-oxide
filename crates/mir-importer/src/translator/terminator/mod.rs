@@ -2423,6 +2423,48 @@ fn try_dispatch_intrinsic(
         )?)),
 
         // =================================================================
+        // Warp-scoped MMA (from intrinsics::mma)
+        // =================================================================
+        "cuda_device::mma::load_a_m16n8k16" => Ok(Some(intrinsics::mma::emit_load_a_m16n8k16(
+            ctx,
+            body,
+            args,
+            destination,
+            target,
+            block_ptr,
+            prev_op,
+            value_map,
+            block_map,
+            loc,
+        )?)),
+        "cuda_device::mma::load_b_m16n8k16" => Ok(Some(intrinsics::mma::emit_load_b_m16n8k16(
+            ctx,
+            body,
+            args,
+            destination,
+            target,
+            block_ptr,
+            prev_op,
+            value_map,
+            block_map,
+            loc,
+        )?)),
+        "cuda_device::mma::mma_m16n8k16_f32_f16_raw" => {
+            Ok(Some(intrinsics::mma::emit_mma_m16n8k16_f32_f16_raw(
+                ctx,
+                body,
+                args,
+                destination,
+                target,
+                block_ptr,
+                prev_op,
+                value_map,
+                block_map,
+                loc,
+            )?))
+        }
+
+        // =================================================================
         // WGMMA (from intrinsics::wgmma)
         // =================================================================
         "cuda_device::wgmma::wgmma_fence" => Ok(Some(intrinsics::wgmma::emit_wgmma_fence(

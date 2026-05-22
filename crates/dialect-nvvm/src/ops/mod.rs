@@ -22,6 +22,7 @@
 //! │ cluster     │ Thread Block Cluster ops + DSMEM   │ Hopper+    │ 10   │
 //! │ mbarrier    │ Async barrier (mbarrier) ops       │ Hopper+    │ 9    │
 //! │ tma         │ Tensor Memory Accelerator ops      │ Hopper+    │ 13   │
+//! │ mma         │ Warp-scoped matrix multiply        │ sm_80+     │ 3    │
 //! │ wgmma       │ Warpgroup Matrix Multiply-Acc      │ Hopper+    │ 5    │
 //! │ tcgen05     │ Tensor Core Gen 5 operations       │ Blackwell+ │ 25+  │
 //! │ stmatrix    │ Shared memory matrix store         │ Hopper+    │ 5    │
@@ -101,6 +102,7 @@ mod cluster;
 mod debug;
 mod grid;
 mod mbarrier;
+mod mma;
 mod stmatrix;
 mod tcgen05;
 mod thread;
@@ -117,6 +119,7 @@ pub use cluster::*;
 pub use debug::*;
 pub use grid::*;
 pub use mbarrier::*;
+pub use mma::*;
 pub use stmatrix::*;
 pub use tcgen05::*;
 pub use thread::*;
@@ -135,6 +138,7 @@ pub fn register(ctx: &mut Context) {
     warp::register(ctx);
     cluster::register(ctx);
     grid::register(ctx);
+    mma::register(ctx);
     mbarrier::register(ctx);
     tma::register(ctx);
     wgmma::register(ctx);

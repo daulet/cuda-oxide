@@ -24,3 +24,13 @@
   under the default Rust test harness even with a process-local mutex, while
   isolated tests and `--test-threads=1` passed. Keep related cuBLAS cases inside
   one test when they share one device/primary context.
+- `kubectl cp local_dir pod:/existing/local_dir` nests the directory as
+  `.../local_dir/local_dir`; copy individual files or copy nested contents back
+  up before trusting pod validation.
+- After changing a path dependency used by an example, `cargo oxide build` can
+  keep using stale dependency metadata in the example `target/release` tree.
+  Remove the specific generated `libcuda_device-*` and `.fingerprint` entries
+  when the source file in the pod is correct but codegen still sees the old API.
+- Rust 2024 rejects taking shared references to `static mut` shared-memory
+  tiles. Use `&raw const TILE` and cast that raw pointer before passing row
+  addresses to ldmatrix-style intrinsics.

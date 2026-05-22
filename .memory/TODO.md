@@ -212,8 +212,77 @@
 
 ### 3. Warp-Scoped Matrix Multiply Acceleration
 
-- Status: open
-- Plan: not started. Write a milestone plan before implementation begins.
+- Status: in-progress
+- Goal: let cuda-oxide kernels use warp-scoped tensor-core MMA for targets and
+  tile shapes where WGMMA or tcgen05 are not the right fit.
+- Source surface: `crates/cuda-device`, MIR importer/lowerer NVVM intrinsic
+  plumbing, example kernels, tests, README/book/support matrix when complete.
+- Required evidence:
+  - warp-scoped `mma.sync` execution,
+  - shared-memory tile staging through `ldmatrix`,
+  - low-precision inputs with wider `f32` accumulators,
+  - a programming model that can build small and medium GEMM tiles from repeated
+    warp-level MMA steps,
+  - validation on the reusable B300 pod.
+
+#### Planned milestones
+
+1. Warp MMA intrinsic surface and lowering
+   - Status: complete
+   - End-state: `cuda-device` exposes a compact `mma` module for the
+     `m16n8k16` f16-input/f32-accumulator shape, and the compiler lowers its
+     fragment loads and MMA call to real `ldmatrix` / `mma.sync` inline PTX.
+   - Implementation plan:
+     - add typed A, B, and accumulator fragment containers with explicit unsafe
+       constructors for shared-memory tile loads;
+     - add MIR importer and NVVM/LLVM lowering for `ldmatrix` loads and
+       `mma.sync.aligned.m16n8k16.row.col.f32.f16.f16.f32`;
+     - add focused compile or PTX-shape checks that reject placeholder
+       lowering and require the emitted instructions.
+   - Validation:
+     - Local `cargo fmt`: passed.
+     - Local `cargo fmt --check`: passed.
+     - Local `cargo fmt --check --manifest-path
+       crates/rustc-codegen-cuda/examples/warp_mma_smoke/Cargo.toml`: passed.
+     - Local `rustup run nightly cargo check -p cuda-device`: passed.
+     - Local `rustup run nightly cargo check -p dialect-nvvm`: passed.
+     - Local `rustup run nightly cargo check -p mir-lower`: passed.
+     - Local `rustup run nightly cargo check -p mir-importer`: passed.
+     - Local `git diff --check`: passed.
+     - `CUDA_HOME=/usr/local/cuda cargo fmt --check` in the reusable
+       `default/cuda-oxide-b300` pod on `hou2-prod1`: passed.
+     - `CUDA_HOME=/usr/local/cuda cargo check -p mir-importer` in the B300 pod:
+       passed.
+     - `CUDA_HOME=/usr/local/cuda CUDA_OXIDE_LLC=/usr/bin/llc-21 cargo oxide
+       build warp_mma_smoke --arch sm_80` in the B300 pod: passed.
+     - Generated `warp_mma_smoke.ptx` contains
+       `ldmatrix.sync.aligned.m8n8.x4.shared.b16`,
+       `ldmatrix.sync.aligned.m8n8.x2.trans.shared.b16`, and
+       `mma.sync.aligned.m16n8k16.row.col.f32.f16.f16.f32`.
+     - `/usr/local/cuda/bin/ptxas --gpu-name sm_80 warp_mma_smoke.ptx -o
+       /tmp/warp_mma_smoke.cubin` in the B300 pod: passed.
+     - Claude CLI non-interactive review: no blocking issues.
+
+2. Hardware-proven warp MMA example
+   - Status: open
+   - End-state: a runnable example computes a reference-checked GEMM tile using
+     shared-memory staging, repeated warp-level MMA, and register
+     accumulation.
+   - Implementation plan:
+     - add a `warp_mma` example that stages f16 A/B tiles into shared memory,
+       loads fragments with the new API, accumulates in `f32`, and stores the
+       16x8 result tile;
+     - run at least two K-tiles so the example proves repeated accumulation,
+       not only a single instruction;
+     - validate output numerically on the B300 pod and inspect generated PTX
+       for `ldmatrix` and `mma.sync`.
+   - Validation: reusable B300 pod in `hou2-prod1`, exact command/log capture.
+
+3. Docs and roadmap closure
+   - Status: open
+   - End-state: README/book/support matrix describe warp-scoped MMA support and
+     item 3 is marked complete on this board.
+   - Validation: doc/source consistency review plus reviewer gate before commit.
 
 ### 4. Scalable Device-Side Selection and Sorting Primitives
 

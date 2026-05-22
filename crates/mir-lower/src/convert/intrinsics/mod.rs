@@ -56,6 +56,7 @@
 //! | [`debug`]    | Clock, trap, breakpoint   | LLVM intrinsics | All     |
 //! | [`warp`]     | Shuffle, vote             | LLVM intrinsics | SM 30+  |
 //! | [`cluster`]  | Cluster IDs, DSMEM, sync  | Inline PTX      | SM 90+  |
+//! | [`mma`]      | Warp-scoped MMA           | Inline PTX      | SM 80+  |
 //! | [`mbarrier`] | Async barriers            | LLVM + PTX      | SM 80+  |
 //! | [`wgmma`]    | Warpgroup MMA             | Inline PTX      | SM 90+  |
 //! | [`tcgen05`]  | 5th-gen Tensor Core       | Inline PTX      | SM 100+ |
@@ -77,6 +78,7 @@ pub mod cluster;
 pub mod common;
 pub mod debug;
 pub mod mbarrier;
+pub mod mma;
 pub mod stmatrix;
 pub mod tcgen05;
 pub mod tma;
