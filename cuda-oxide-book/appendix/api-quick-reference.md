@@ -409,7 +409,7 @@ debug::prof_trigger::<7>();     // Nsight profiler trigger
 | `cuda-device`     | Device intrinsics and types (`#![no_std]`)                             |
 | `cuda-macros`     | Proc macros (`#[kernel]`, `#[device]`, `gpu_printf!`)                  |
 | `cuda-host`       | Typed module loading plus low-level launch helpers                     |
-| `cuda-core`       | Safe RAII wrappers (`CudaContext`, `CudaStream`, `DeviceBuffer<T>`)    |
+| `cuda-core`       | Safe RAII wrappers (`CudaContext`, `CudaStream`, device and residency buffers) |
 | `cuda-async`      | `DeviceOperation`, `DeviceFuture`, `DeviceBox<T>`                      |
 | `cuda-bindings`   | Raw `bindgen` FFI to `cuda.h`                                          |
 | `cargo-oxide`     | Cargo subcommand (`cargo oxide run`, `build`, `debug`)                 |

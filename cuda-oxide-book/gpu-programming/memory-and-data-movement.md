@@ -392,13 +392,14 @@ host memory transparently, at the cost of page-fault latency on first access.
 | Mode                 | What GPU can access   | Allocation required    | First-access cost            | Hardware requirement      |
 |:---------------------|:----------------------|:-----------------------|:-----------------------------|:--------------------------|
 | **Explicit copy**    | Device memory only    | `DeviceBuffer`         | None (data copied upfront)   | Any CUDA GPU              |
-| **Pinned (mapped)**  | Specific host buffers | `cudaHostAlloc`        | High (~10--20 µs per access) | Any CUDA GPU              |
-| **Unified Memory**   | Managed allocations   | `cudaMallocManaged`    | Medium (page migration)      | Kepler+ (sm_30+)          |
+| **Pinned (mapped)**  | Specific host buffers | `MappedHostBuffer`     | High (~10--20 µs per access) | Any CUDA GPU              |
+| **Unified Memory**   | Managed allocations   | `ManagedBuffer`        | Medium (page migration)      | Kepler+ (sm_30+)          |
 | **HMM**              | *Any* host memory     | None                   | Medium (page fault + fetch)  | Turing+ on Linux          |
 
 cuda-oxide primarily uses **explicit copies** (`DeviceBuffer`, `DeviceBox`) for
 bulk data and **HMM** for non-move closure captures and small configuration
-data.
+data. For residency-sensitive regions, `cuda-core` also exposes managed memory,
+mapped host memory, and registration of existing host memory.
 
 ### Unified Memory
 
@@ -411,10 +412,36 @@ invisible to your code but not free: the first access from the "wrong" side
 incurs a page fault and a DMA transfer over the interconnect. Subsequent
 accesses to the same page hit the GPU's local cache.
 
-cuda-oxide does not currently wrap `cudaMallocManaged` directly. For managed-
-memory workflows you would use the CUDA driver API through raw bindings.
-In practice, `DeviceBuffer::from_host` (explicit copy) covers most use cases
-and gives predictable performance.
+cuda-oxide wraps CUDA managed memory as `ManagedBuffer<T>`. The buffer has a
+host slice view and a device-visible pointer, so kernels can operate on the
+same allocation that host code initializes or reads back. Managed buffers also
+support residency controls:
+
+- `advise(MemoryAdvice::SetReadMostly)` and related advice calls,
+- `prefetch_to(stream, MemoryLocation::Device(device))` before a kernel,
+- `prefetch_to(stream, MemoryLocation::Host)` before host-side reads,
+- `attach_to_stream(stream, StreamAttachment::Single | Global | Host)`.
+
+Use managed memory when demand migration or explicit prefetch is part of the
+application policy. For bulk arrays with predictable access patterns,
+`DeviceBuffer::from_host` still gives the most direct performance model because
+data is copied before compute starts.
+
+### Mapped and registered host memory
+
+`MappedHostBuffer<T>` allocates page-locked host memory and obtains a
+device-visible pointer for it. This is useful when the GPU should access a
+host-backed region directly and the application accepts the interconnect
+latency.
+
+`RegisteredHostMemory<'a, T>` registers an existing mutable host slice and
+unregisters it when the guard is dropped. The borrow lifetime prevents the host
+slice from being moved or reused while CUDA has it registered.
+
+Applications that select residency at runtime can use
+`ResidencyBuffer<T>::zeroed_with` or `from_slice_with`. The policy closure
+receives a `ResidencyRequest` with element and byte counts, then returns
+`ResidencyStrategy::Managed` or `ResidencyStrategy::MappedHost`.
 
 ### HMM (Heterogeneous Memory Management)
 
@@ -506,10 +533,12 @@ nvidia-smi -q | grep Addressing
 
 | Scenario                                    | Recommended approach                       |
 |:--------------------------------------------|:-------------------------------------------|
-| Large arrays processed by many threads      | `DeviceBuffer::from_host` (explicit copy)  |
-| Small read-only configuration data          | HMM (pass pointer, let GPU page-fault)     |
-| Data shared between CPU and GPU iteratively | Explicit copies with double-buffering      |
-| Prototyping / quick experiments             | HMM (simplest -- no copies needed)         |
+| Large arrays processed by many threads      | `DeviceBuffer::from_host` (explicit copy)             |
+| Large regions with policy-driven migration  | `ManagedBuffer` with advice and prefetch              |
+| Host-backed GPU reads or writes          | `MappedHostBuffer` or `RegisteredHostMemory`        |
+| Small read-only configuration data          | HMM (pass pointer, let GPU page-fault)                |
+| Data shared between CPU and GPU iteratively | Explicit copies with double-buffering or managed prefetch |
+| Prototyping / quick experiments             | HMM (simplest -- no copies needed)                    |
 
 :::{tip}
 HMM is a convenience, not a performance strategy. For bandwidth-sensitive
@@ -521,4 +550,7 @@ avoid page-fault overhead and use the full memory bus width.
 [CUDA Programming Guide -- Unified Memory](https://docs.nvidia.com/cuda/cuda-programming-guide/04-special-topics/unified-memory.html)
 and [NVIDIA Blog -- Simplifying GPU Development with HMM](https://developer.nvidia.com/blog/simplifying-gpu-application-development-with-heterogeneous-memory-management/)
 for the full details on page migration, prefetching, and system requirements.
+See `crates/rustc-codegen-cuda/examples/memory_residency` for a runnable
+cuda-oxide example using managed memory, mapped host memory, and registered host
+memory on one kernel path.
 :::

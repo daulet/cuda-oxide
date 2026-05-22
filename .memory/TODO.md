@@ -4,7 +4,7 @@
 
 ### 1. Large-Model Memory Residency Controls
 
-- Status: in-progress
+- Status: complete
 - Goal: let advanced cuda-oxide applications express the residency strategy for
   large tensors and cache regions without leaving the Rust runtime layer.
 - Source surface: `crates/cuda-core`, related docs/examples/tests, and the
@@ -86,10 +86,19 @@
        elements`.
 
 4. Docs and roadmap closure
-   - Status: open
+   - Status: complete
    - End-state: README/book/support matrix reflect the shipped capability and
      item 1 is marked complete on this board.
-   - Validation: doc/source consistency review plus reviewer gate before commit.
+   - Implementation plan:
+     - replace stale book text that says managed memory has no cuda-oxide
+       wrapper;
+     - add the residency API to the support matrix and `cuda-core` public docs;
+     - update README highlights/examples and mark the roadmap item shipped.
+   - Validation:
+     - Local `cargo fmt --check`: passed.
+     - Local `git diff --check`: passed.
+     - `PATH=.venv/bin:$PATH make html` in `cuda-oxide-book`: passed.
+     - Claude CLI non-interactive review: no blocking issues.
 
 ## Remaining roadmap items
 

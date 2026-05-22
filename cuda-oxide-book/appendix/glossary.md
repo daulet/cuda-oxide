@@ -51,8 +51,8 @@ cores, atomics, and debug facilities.
 ## `cuda-core`
 
 Safe RAII wrappers around the CUDA Driver API: `CudaContext`, `CudaStream`,
-`DeviceBuffer<T>`, and module loading. Handles GPU context and memory management
-on the host side.
+`DeviceBuffer<T>`, memory residency handles, and module loading. Handles GPU
+context and memory management on the host side.
 
 ## `DeviceOperation`
 

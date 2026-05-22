@@ -15,7 +15,7 @@ The workspace combines:
 - single-source compilation -- host and device code live in the same file, built with one `cargo oxide build`
 - a rustc codegen backend that compiles `#[kernel]` functions to CUDA PTX
 - device-side abstractions (type-safe indexing, shared memory, scoped atomics, barriers, TMA, warp/cluster ops)
-- a host-side runtime for memory management, pinned host transfers, and kernel launching (`cuda-core`, `cuda-async`)
+- a host-side runtime for device, pinned, managed, mapped, and registered memory plus kernel launching (`cuda-core`, `cuda-async`)
 - a rust-native compilation pipeline using [Pliron](https://github.com/vaivaswatha/pliron), an MLIR-like IR framework in Rust (Rust → Rust MIR → Pliron IR → LLVM IR → PTX)
 
 ## Project Status
@@ -219,7 +219,7 @@ compiles a Rust kernel to PTX, launches it on the GPU, and prints
 
 ## Examples
 
-**46 examples** in `crates/rustc-codegen-cuda/examples/`. Highlights:
+**47 examples** in `crates/rustc-codegen-cuda/examples/`. Highlights:
 
 | Example              | Description                                                              |
 |----------------------|--------------------------------------------------------------------------|
@@ -233,6 +233,7 @@ compiles a Rust kernel to PTX, launches it on the GPU, and prints
 | `async_mlp`          | Async MLP pipeline: GEMM → MatVec → ReLU across concurrent streams       |
 | `mathdx_ffi_test`    | cuFFTDx thread-level FFT + cuBLASDx block-level GEMM                     |
 | `async_vecadd`       | Async GPU execution with `cuda-async` and `DeviceOperation`              |
+| `memory_residency`   | Managed, mapped, and registered host memory residency controls            |
 | `cross_crate_kernel` | Library crates defining kernels, bundled into binaries                   |
 
 ```bash
@@ -250,7 +251,7 @@ cargo oxide run gemm_sol
 | `cuda-host`         | Typed module loading, launch helpers, LTOIR loader                        |
 | `cuda-macros`       | Proc macros (`#[cuda_module]`, `#[kernel]`, `gpu_printf!`)                |
 | `cuda-bindings`     | Raw `bindgen` FFI bindings to `cuda.h`                                    |
-| `cuda-core`         | Safe RAII wrappers (`CudaContext`, `CudaStream`, `DeviceBuffer<T>`, `PinnedHostBuffer<T>`) |
+| `cuda-core`         | Safe RAII wrappers (`CudaContext`, `CudaStream`, `DeviceBuffer<T>`, residency buffers) |
 | `cuda-async`        | Async execution layer (`DeviceOperation`, `DeviceFuture`, `DeviceBox<T>`) |
 | `libnvvm-sys`       | `dlopen` bindings to libNVVM (used by `cuda-host::ltoir`)                 |
 | `nvjitlink-sys`     | `dlopen` bindings to nvJitLink (used by `cuda-host::ltoir`)               |
@@ -292,7 +293,7 @@ cargo oxide run gemm_sol
 - LTOIR generation for Blackwell+ (device-side LTO)
 - Device FFI: Rust <-> C++/CCCL interop via LTOIR
 - MathDx integration: cuFFTDx thread-level FFT, cuBLASDx block-level GEMM
-- Host runtime: `cuda-core` (explicit control, pinned host transfers) and `cuda-async` (composable async operations)
+- Host runtime: `cuda-core` (explicit control, pinned host transfers, memory residency controls) and `cuda-async` (composable async operations)
 - GEMM SoL: 868 TFLOPS (58% cuBLAS SoL) on B200 with cta_group::2, CLC, 4-stage pipeline
 
 ## Documentation

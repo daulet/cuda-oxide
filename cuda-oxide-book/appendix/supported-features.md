@@ -97,6 +97,17 @@ roadmap, **N/A** = not applicable or no identified need.
 | `ThreadIndex<'kernel, IndexSpace>` | **Full** | Opaque witness only constructable by trusted index functions. `!Send + !Sync + !Copy + !Clone`, `'kernel`-scoped — non-transferable across threads, can't outlive the kernel body. |
 | `ManagedBarrier` Typestate | **Full** | Compile-time barrier lifecycle: `Uninit → Ready → Invalidated`. Invalid transitions are compile errors. |
 
+## Runtime Library: Memory Ownership and Residency
+
+| Feature | Status | Description |
+|:--------|:-------|:------------|
+| `DeviceBuffer<T>` | **Full** | Owns device memory and provides host-device transfer helpers for `T: DeviceCopy`. |
+| `PinnedHostBuffer<T>` | **Full** | Owns page-locked host memory for faster explicit transfers. Async transfer helpers require the caller to keep the pinned buffer alive until synchronization. |
+| `ManagedBuffer<T>` | **Full** | Owns CUDA managed memory, exposes a host slice plus a device-visible pointer, and supports `MemoryAdvice`, `prefetch_to`, and stream attachment. |
+| `MappedHostBuffer<T>` | **Full** | Owns mapped page-locked host memory with a device-visible pointer for kernels that intentionally read or write host-backed memory. |
+| `RegisteredHostMemory<'a, T>` | **Full** | Registers an existing mutable host slice for GPU access and ties unregistration to the borrow lifetime. |
+| Residency policy hook | **Full** | `ResidencyBuffer<T>::zeroed_with` and `from_slice_with` let applications choose managed or mapped-host allocation from a `ResidencyRequest`. |
+
 ## Runtime Library: Atomics
 
 | Feature | Status | Description |

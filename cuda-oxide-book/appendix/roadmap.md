@@ -11,24 +11,27 @@ that better fits the project.
 
 ## Large-Model Memory Residency Controls
 
-Some inference runtimes need more than ordinary device allocations. They manage
-very large, long-lived model and KV-cache regions and may choose among several
-memory-residency strategies depending on hardware, system memory pressure, and
-latency goals.
+Status: shipped. Some inference runtimes need more than ordinary device
+allocations. They manage very large, long-lived model and KV-cache regions and
+may choose among several memory-residency strategies depending on hardware,
+system memory pressure, and latency goals.
 
-The missing functionality is a supported cuda-oxide path for workflows that
-need capabilities such as:
+cuda-oxide now provides a supported runtime path for workflows that need:
 
-- managed allocations suitable for very large tensors or caches,
-- mapped host memory or equivalent host-visible GPU access,
-- registration of pre-existing host memory for GPU access,
-- residency hints or equivalent placement controls,
-- asynchronous prefetch or staging of large regions before compute,
-- application-level policy hooks for selecting among these behaviors.
+- `ManagedBuffer<T>` for managed allocations suitable for very large tensors or
+  caches,
+- `MappedHostBuffer<T>` for mapped host memory with a device-visible pointer,
+- `RegisteredHostMemory<'a, T>` for pre-existing host memory registration,
+- `MemoryAdvice`, `MemoryLocation`, and `StreamAttachment` for placement and
+  access controls,
+- asynchronous managed-memory prefetch through `ManagedBuffer::prefetch_to`,
+- `ResidencyBuffer<T>` and `ResidencyRequest` as an application-level policy
+  hook for choosing among residency strategies.
 
 The goal is not to standardize one memory policy, but to let advanced Rust GPU
 applications express and control the residency model they need without dropping
-out of the cuda-oxide ecosystem for the entire feature.
+out of the cuda-oxide ecosystem for the entire feature. The
+`memory_residency` example exercises the shipped path on a real CUDA kernel.
 
 ## Production Dense Linear Algebra Integration
 

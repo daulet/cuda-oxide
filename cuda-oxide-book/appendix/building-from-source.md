@@ -200,7 +200,7 @@ cuda-oxide/
 │   ├── cuda-host/            # Host launch APIs
 │   ├── cuda-macros/          # Proc macros (#[kernel], #[device], gpu_printf!)
 │   ├── cuda-bindings/        # Raw bindgen FFI to cuda.h
-│   ├── cuda-core/            # Safe RAII wrappers (CudaContext, DeviceBuffer)
+│   ├── cuda-core/            # Safe RAII wrappers (CudaContext, buffers, residency)
 │   ├── cuda-async/           # Async execution (DeviceOperation, DeviceFuture)
 │   ├── cargo-oxide/          # Cargo subcommand
 │   ├── rustc-codegen-cuda/   # Codegen backend (not a workspace member)
