@@ -21,6 +21,9 @@ pub mod debug;
 pub mod disjoint;
 pub mod fence;
 pub mod grid;
+pub mod lowp {
+    pub use cuda_lowp::*;
+}
 pub mod mma;
 pub mod selection;
 pub mod shared;
@@ -53,6 +56,7 @@ pub use barrier::{
 pub use cusimd::{CuSimd, Float2, Float4, TmemRegs4, TmemRegs32};
 pub use disjoint::DisjointSlice;
 pub use fence::*;
+pub use lowp::{Fp4E2M1, Fp4x2E2M1, Fp4x4E2M1, Fp8E4M3, Fp8E5M2, Fp8x2E4M3, Fp8x2E5M2};
 pub use mma::{MmaAccumulator, MmaOperandA, MmaOperandB};
 pub use selection::{TopK, TopKEntry, block_topk_f32};
 pub use shared::{DynamicSharedArray, SharedArray};

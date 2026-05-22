@@ -1,0 +1,10 @@
+[package]
+name = "cuda-lowp"
+version = "0.1.0"
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Low-precision inference storage types for cuda-oxide host and device code"
+
+[dependencies]

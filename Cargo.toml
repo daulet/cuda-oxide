@@ -4,6 +4,7 @@ members = [
     # Core crates
     "crates/cuda-device",
     "crates/cuda-host",
+    "crates/cuda-lowp",
     "crates/cuda-macros",
     "crates/dialect-llvm",
     "crates/dialect-mir",
@@ -51,6 +52,7 @@ mir-lower = { path = "crates/mir-lower" }
 mir-importer = { path = "crates/mir-importer" }
 cuda-device = { path = "crates/cuda-device" }
 cuda-host = { path = "crates/cuda-host" }
+cuda-lowp = { path = "crates/cuda-lowp" }
 cuda-macros = { path = "crates/cuda-macros" }
 cuda-bindings = { path = "crates/cuda-bindings" }
 cuda-core = { path = "crates/cuda-core" }

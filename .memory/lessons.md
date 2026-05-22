@@ -43,3 +43,6 @@
   `self.field[index]` can exceed the MIR importer's current complex-place
   support. Copy the array field into a local, mutate the local array, then
   assign the whole field back.
+- CUDA's fp4 `__NV_E2M1` storage uses sign bit `0x8` inside the low nibble,
+  not the fp8 sign bit `0x80`; fp4 NaN narrowing saturates to positive
+  maxnorm, while fp8 SATFINITE NaN narrowing returns canonical `0x7f`.

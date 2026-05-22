@@ -350,6 +350,7 @@ dependencies = [
 name = "cuda-device"
 version = "0.1.0"
 dependencies = [
+ "cuda-lowp",
  "cuda-macros",
  "trybuild",
 ]
@@ -366,6 +367,10 @@ dependencies = [
  "nvjitlink-sys",
  "thiserror",
 ]
+
+[[package]]
+name = "cuda-lowp"
+version = "0.1.0"
 
 [[package]]
 name = "cuda-macros"

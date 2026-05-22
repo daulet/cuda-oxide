@@ -406,7 +406,7 @@
 #### Planned milestones
 
 1. Shared low-precision value model
-   - Status: open
+   - Status: complete
    - End-state: the workspace has a no-std low-precision crate that can be used
      from both host and device code, with compact `repr(transparent)` storage
      types and exhaustive bit-level tests.
@@ -420,7 +420,23 @@
        dependencies to the device crate;
      - verify the chosen CUDA/NVIDIA format names and encodings against the
        CUDA 13.2 headers in the reusable B300 pod before locking the API.
-   - Validation: pending.
+   - Validation:
+     - CUDA 13.2 header/probe check in the reusable `default/cuda-oxide-b300`
+       B300 pod: confirmed `__NV_E4M3`, `__NV_E5M2`, `__NV_E2M1`,
+       round-to-nearest-even fp8/fp4 conversion behavior, fp4 NaN to positive
+       maxnorm, and low-lane-first fp8/fp4 packing order.
+     - Local `cargo fmt --check`: passed.
+     - Local `cargo test -p cuda-lowp -- --nocapture`: passed; 8 unit tests.
+     - Local `rustup run nightly cargo check -p cuda-lowp`: passed.
+     - Local `rustup run nightly cargo check -p cuda-device`: passed.
+     - Local `git diff --check`: passed.
+     - `CUDA_HOME=/usr/local/cuda cargo fmt --check` in the reusable B300 pod:
+       passed.
+     - `CUDA_HOME=/usr/local/cuda cargo test -p cuda-lowp -- --nocapture` in
+       the B300 pod: passed; 8 unit tests.
+     - `CUDA_HOME=/usr/local/cuda cargo check -p cuda-device` in the B300 pod:
+       passed.
+     - Claude CLI non-interactive review: no blocking issues.
 
 2. Host runtime movement and device conversion proof
    - Status: open
