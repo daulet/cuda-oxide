@@ -387,5 +387,77 @@
 
 ### 5. First-Class Low-Precision Inference Data Types
 
-- Status: open
-- Plan: not started. Write a milestone plan before implementation begins.
+- Status: in-progress
+- Goal: give inference-oriented cuda-oxide programs first-class low-precision
+  storage types with explicit conversion, packing, comparison, and
+  host/device movement semantics.
+- Source surface: a shared no-std low-precision type crate, `cuda-device`
+  re-exports, `cuda-core` `DeviceCopy` integration, examples, README/book
+  support matrix when complete.
+- Required evidence:
+  - fp8-class representations for common inference storage formats,
+  - an fp4/MX-style packed representation useful for Blackwell-era data paths,
+  - explicit `from_bits`/`to_bits`, `from_f32_sat`, `to_f32`, packing, and
+    unpacking semantics,
+  - deterministic comparison rules that do not hide NaN behavior,
+  - `DeviceBuffer` compatibility for host/device transfers,
+  - at least one real kernel moving and converting these values on B300.
+
+#### Planned milestones
+
+1. Shared low-precision value model
+   - Status: open
+   - End-state: the workspace has a no-std low-precision crate that can be used
+     from both host and device code, with compact `repr(transparent)` storage
+     types and exhaustive bit-level tests.
+   - Implementation plan:
+     - add a workspace `cuda-lowp` crate for `Fp8E4M3`, `Fp8E5M2`,
+       `Fp4E2M1`, and packed helpers such as fp8 pairs and fp4 pairs;
+     - define exact bit layouts, canonical NaN handling, saturating finite
+       conversion from `f32`, widening to `f32`, and deterministic total
+       comparison methods;
+     - re-export the types from `cuda-device` without adding host-runtime
+       dependencies to the device crate;
+     - verify the chosen CUDA/NVIDIA format names and encodings against the
+       CUDA 13.2 headers in the reusable B300 pod before locking the API.
+   - Validation: pending.
+
+2. Host runtime movement and device conversion proof
+   - Status: open
+   - End-state: low-precision values can be stored in `DeviceBuffer`s,
+     transferred between host and device as typed values, and converted inside
+     a Rust-authored kernel.
+   - Implementation plan:
+     - add `cuda-core::DeviceCopy` impls for the low-precision storage types;
+     - add a `lowp_roundtrip` `cargo oxide run` example that quantizes `f32`
+       inputs to fp8/fp4 forms, stores packed values, reloads them in a kernel,
+       widens them, and checks host/device agreement;
+     - cover edge cases explicitly: signed zeros, saturation, infinities, NaN,
+       tie rounding, and packed nibble/byte ordering.
+   - Validation: pending.
+
+3. Inference-style packing API and integration checks
+   - Status: open
+   - End-state: kernels have ergonomic helpers for moving low-precision
+     vectors through router/indexer and accelerator-adjacent code without
+     bespoke bit manipulation at each call site.
+   - Implementation plan:
+     - add small typed pack/unpack helpers for groups used by inference
+       kernels, keeping byte order explicit and documented;
+     - add compile checks that low-precision values work in `SharedArray`,
+       slices, disjoint output slices, and kernel argument paths;
+     - where CUDA exposes a direct storage-data-type mapping, add typed mapping
+       helpers rather than open-coded enum constants in examples.
+   - Validation: pending.
+
+4. Docs and roadmap closure
+   - Status: open
+   - End-state: README/book/support matrix describe the shipped low-precision
+     type story and item 5 is marked complete on this board.
+   - Implementation plan:
+     - document the type/packing API in the root README, device/runtime crate
+       docs, API quick reference, and supported-features matrix;
+     - replace the `FP8 / MX Data Types` planned entry with the shipped scope;
+     - keep the roadmap honest about storage/conversion support versus any
+       future tensor-core or library-matmul expansion.
+   - Validation: pending.
