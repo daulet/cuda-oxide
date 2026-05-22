@@ -172,7 +172,7 @@
      - Claude CLI non-interactive review: no blocking issues.
 
 3. Example and orchestration proof
-   - Status: open
+   - Status: complete
    - End-state: a `cargo oxide run` example demonstrates cuBLAS GEMM composed
      with cuda-oxide-managed buffers, streams, and a Rust-authored kernel.
    - Implementation plan:
@@ -180,7 +180,16 @@
        or after cuBLAS work on the same stream;
      - exercise both regular and strided-batched GEMM paths;
      - verify correctness on the reusable B300 pod.
-   - Validation: reusable B300 pod in `hou2-prod1`, exact command/log capture.
+   - Validation:
+     - Local `cargo fmt --check`: passed.
+     - Local `cargo fmt --check --manifest-path
+       crates/rustc-codegen-cuda/examples/cublas_gemm/Cargo.toml`: passed.
+     - Local `git diff --check`: passed.
+     - `CUDA_HOME=/usr/local/cuda CUDA_OXIDE_LLC=/usr/bin/llc-21 cargo oxide
+       run cublas_gemm` in the reusable `default/cuda-oxide-b300` B300 pod on
+       `hou2-prod1`: passed; auto-detected `sm_103` and printed
+       `SUCCESS: cuBLAS GEMM paths matched CPU references`.
+     - Claude CLI non-interactive review: no blocking issues.
 
 4. Docs and roadmap closure
    - Status: open
