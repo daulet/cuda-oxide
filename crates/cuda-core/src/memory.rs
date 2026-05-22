@@ -88,6 +88,31 @@ pub unsafe fn free_sync(dptr: CUdeviceptr) -> Result<(), DriverError> {
     unsafe { cuda_bindings::cuMemFree_v2(dptr) }.result()
 }
 
+/// Allocates `num_bytes` of CUDA managed memory with global attachment.
+///
+/// Managed memory is accessible through the returned `CUdeviceptr` from GPU
+/// work and through the corresponding host address after stream or context
+/// synchronization. Pair with [`free_sync`].
+///
+/// # Safety
+///
+/// - A CUDA context must be bound to the calling thread.
+/// - `num_bytes` must not exceed the managed-memory capacity available to the
+///   driver. Passing zero bytes is not useful and the CUDA driver reports it as
+///   an error.
+pub unsafe fn malloc_managed(num_bytes: usize) -> Result<CUdeviceptr, DriverError> {
+    let mut dev_ptr = MaybeUninit::uninit();
+    unsafe {
+        cuda_bindings::cuMemAllocManaged(
+            dev_ptr.as_mut_ptr(),
+            num_bytes,
+            cuda_bindings::CUmemAttach_flags_enum_CU_MEM_ATTACH_GLOBAL,
+        )
+        .result()?;
+        Ok(dev_ptr.assume_init())
+    }
+}
+
 /// Copies `num_bytes` from host memory at `src` to device memory at `dst`,
 /// enqueued on `stream` (host-to-device, async).
 ///
@@ -197,4 +222,80 @@ pub unsafe fn malloc_host(num_bytes: usize) -> Result<*mut c_void, DriverError> 
 /// - No in-flight CUDA transfer or kernel may reference `ptr`.
 pub unsafe fn free_host(ptr: *mut c_void) -> Result<(), DriverError> {
     unsafe { cuda_bindings::cuMemFreeHost(ptr) }.result()
+}
+
+/// Allocates `num_bytes` of page-locked host memory that has a device-visible
+/// address.
+///
+/// Pair with [`free_host`]. Use [`host_get_device_pointer`] to retrieve the
+/// address kernels can use.
+///
+/// # Safety
+///
+/// - A CUDA context must be bound to the calling thread.
+/// - The active device must support mapped host memory.
+/// - `num_bytes` must not exceed the host memory available for page-locked
+///   allocations. Passing zero bytes is not useful and the CUDA driver reports
+///   it as an error.
+pub unsafe fn malloc_mapped_host(num_bytes: usize) -> Result<*mut c_void, DriverError> {
+    let mut host_ptr = MaybeUninit::uninit();
+    unsafe {
+        cuda_bindings::cuMemHostAlloc(
+            host_ptr.as_mut_ptr(),
+            num_bytes,
+            cuda_bindings::CU_MEMHOSTALLOC_DEVICEMAP,
+        )
+        .result()?;
+        Ok(host_ptr.assume_init())
+    }
+}
+
+/// Returns the device-visible address for mapped or registered host memory.
+///
+/// # Safety
+///
+/// - `ptr` must point into memory allocated by [`malloc_mapped_host`] or
+///   registered by [`host_register_mapped`].
+/// - A CUDA context must be bound to the calling thread.
+pub unsafe fn host_get_device_pointer(ptr: *mut c_void) -> Result<CUdeviceptr, DriverError> {
+    let mut dev_ptr = MaybeUninit::uninit();
+    unsafe {
+        cuda_bindings::cuMemHostGetDevicePointer_v2(dev_ptr.as_mut_ptr(), ptr, 0).result()?;
+        Ok(dev_ptr.assume_init())
+    }
+}
+
+/// Registers an existing host allocation and exposes it to the GPU address
+/// space.
+///
+/// Pair with [`host_unregister`].
+///
+/// # Safety
+///
+/// - `ptr` must point to at least `num_bytes` of live host memory.
+/// - The range must not already be registered with CUDA.
+/// - The range must satisfy the active CUDA driver's host-registration
+///   constraints.
+/// - The active device must support mapped host memory.
+/// - No in-flight CUDA work may reference the range after it is unregistered.
+pub unsafe fn host_register_mapped(ptr: *mut c_void, num_bytes: usize) -> Result<(), DriverError> {
+    unsafe {
+        cuda_bindings::cuMemHostRegister_v2(
+            ptr,
+            num_bytes,
+            cuda_bindings::CU_MEMHOSTREGISTER_DEVICEMAP,
+        )
+    }
+    .result()
+}
+
+/// Unregisters host memory previously registered by [`host_register_mapped`].
+///
+/// # Safety
+///
+/// - `ptr` must be the base pointer originally passed to
+///   [`host_register_mapped`].
+/// - No in-flight CUDA work may reference the registered range.
+pub unsafe fn host_unregister(ptr: *mut c_void) -> Result<(), DriverError> {
+    unsafe { cuda_bindings::cuMemHostUnregister(ptr) }.result()
 }

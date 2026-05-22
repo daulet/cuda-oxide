@@ -21,6 +21,8 @@
 //! - [`CudaModule`] / [`CudaFunction`] -- PTX/cubin loading and kernel handle
 //!   extraction.
 //! - [`PinnedHostBuffer`] -- page-locked host memory for CUDA transfers.
+//! - [`ManagedBuffer`], [`MappedHostBuffer`], and [`RegisteredHostMemory`] --
+//!   memory residency handles for large CUDA-facing regions.
 //! - [`LaunchConfig`] -- grid/block dimension helper.
 //! - [`memory`] -- free functions for device allocation, transfer, and memset
 //!   (both stream-ordered async and synchronous variants).
@@ -58,6 +60,8 @@ pub mod module;
 pub mod peer;
 /// Page-locked host memory for CUDA transfers.
 pub mod pinned_host_buffer;
+/// Memory residency handles for managed, mapped, and registered host memory.
+pub mod residency;
 /// CUDA stream management (RAII, host callbacks, fork/join).
 pub mod stream;
 /// CUDA Virtual Memory Management (VMM) for physical alloc, VA reservation, and mapping.
@@ -73,6 +77,7 @@ pub use event::CudaEvent;
 pub use launch::LaunchConfig;
 pub use module::{CudaFunction, CudaModule};
 pub use pinned_host_buffer::PinnedHostBuffer;
+pub use residency::{ManagedBuffer, MappedHostBuffer, RegisteredHostMemory};
 pub use stream::CudaStream;
 
 use std::ffi::c_uint;
