@@ -11,7 +11,8 @@
   │                                             │
   │  thread     warp       barrier     cusimd   │  Universal
   │  disjoint   shared     atomic      debug    │
-  │  selection  fence      grid       coop_grps │
+  │  lowp       selection  fence      grid      │
+  │  coop_grps                                  │
   │                                             │
   │  mma                                        │  Ampere+
   │  tma        wgmma      stmatrix    cluster  │  Hopper+
@@ -36,6 +37,7 @@
 | `fence`              | `threadfence_block` / `threadfence` / `threadfence_system` memory fences     | All     |
 | `grid`               | Grid-scoped queries and `sync` (cooperative kernel launches only)            | sm_70+  |
 | `cooperative_groups` | Typed group handles (`Grid`/`ThreadBlock`/`WarpTile<N>`/`CoalescedThreads`)  | All     |
+| `lowp`               | Re-exported FP8/FP4 storage, conversion, comparison, and packing types       | All     |
 | `selection`          | Deterministic fixed-capacity top-k and block-cooperative row selection       | All     |
 | `barrier`            | `Barrier`, `ManagedBarrier<State, Kind>` -- async mbarrier for TMA           | sm_90+  |
 | `cluster`            | Thread block clusters, DSMEM (`map_shared_rank`), `cluster_sync`             | sm_90+  |
@@ -129,6 +131,23 @@ let block = this_thread_block();
 let top = block_topk_f32::<4, 128>(&block, scores, row_start, row_len, &raw mut SCRATCH);
 ```
 
+### Low-Precision Storage
+
+`lowp` re-exports the shared `cuda-lowp` types for inference-oriented storage:
+`Fp8E4M3`, `Fp8E5M2`, `Fp4E2M1`, fp8x2/fp8x4 packs, and fp4x2/fp4x4 packs.
+The formats match CUDA 13.2's `__NV_E4M3`, `__NV_E5M2`, and `__NV_E2M1`
+interpretations. Conversions use explicit `from_f32_sat` / `to_f32` methods;
+packing keeps the low lane in the low byte or nibble.
+
+```rust
+use cuda_device::{Fp4E2M1, Fp4x2E2M1, Fp8E4M3, Fp8x4E4M3};
+
+let e4 = Fp8E4M3::from_f32_sat(1.25);
+let pair = Fp4x2E2M1::new(Fp4E2M1::from_f32_sat(0.5), Fp4E2M1::from_f32_sat(6.0));
+let group = Fp8x4E4M3::new(e4, e4, e4, e4);
+let widened = group.get(0).to_f32() + pair.hi().to_f32();
+```
+
 ### Tensor Cores and TMA
 
 **TMA** (`tma` module): Hardware DMA via `TmaDescriptor`. Async bulk tensor copies in 1D-5D between global and shared memory, with multicast and CTA-group-2 variants.
@@ -174,8 +193,9 @@ These are defined in `cuda-macros` and re-exported from `cuda-device` for conven
 1. **`ThreadIndex`** -- unconstructible except via trusted functions; guarantees unique indices
 2. **`DisjointSlice::get_mut()`** -- bounds-checked `Option<&mut T>`; `get_unchecked_mut()` is the explicit `unsafe` escape
 3. **`SharedArray` / `DynamicSharedArray`** -- `!Sync`; all access via `static mut` requires `unsafe`
-4. **Selection scratch, barriers, TMA, MMA, WGMMA, tcgen05** -- caller ensures cooperative synchronization and hardware-specific contracts
-5. **Atomics** -- `unsafe impl Sync`; ordering semantics match CUDA scoped atomics
+4. **Low-precision storage** -- `repr(transparent)` byte/word wrappers; conversion and packing semantics are explicit, but numerical range loss is still the caller's modeling choice
+5. **Selection scratch, barriers, TMA, MMA, WGMMA, tcgen05** -- caller ensures cooperative synchronization and hardware-specific contracts
+6. **Atomics** -- `unsafe impl Sync`; ordering semantics match CUDA scoped atomics
 
 ## Further Reading
 

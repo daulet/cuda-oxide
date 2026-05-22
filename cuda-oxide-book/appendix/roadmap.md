@@ -107,22 +107,30 @@ NaNs on B300 hardware.
 
 ## First-Class Low-Precision Inference Data Types
 
-Modern inference systems increasingly depend on data representations beyond
-plain `f16` and `bf16`. Some workloads emulate narrower formats manually today,
-but that leaves usability, validation, and interoperability uneven.
+Status: shipped. Modern inference systems increasingly depend on data
+representations beyond plain `f16` and `bf16`. Some workloads emulate narrower
+formats manually today, but that leaves usability, validation, and
+interoperability uneven.
 
-The missing functionality is a coherent low-precision type story for CUDA-facing
-Rust GPU code, covering formats relevant to inference workloads, including:
+cuda-oxide now has a coherent low-precision storage story for CUDA-facing Rust
+GPU code, covering formats relevant to inference workloads:
 
-- fp8-class representations,
-- fp4- or MX-style representations where they are useful to accelerator paths,
+- fp8-class E4M3 and E5M2 representations,
+- fp4 E2M1 scalar and packed representations,
 - explicit conversion and packing semantics,
 - predictable load/store behavior and comparison rules,
-- interop with accelerator and math-library paths where practical.
+- typed host/device movement through `DeviceBuffer`.
 
-The roadmap target is not to force all low-precision formats into core language
-types. It is to give inference-oriented cuda-oxide programs a supported and
-well-defined way to represent and move these values through real kernels.
+The `cuda-lowp` crate is no-std and shared by host and device code.
+`cuda_device::lowp` re-exports the same types for kernels, and `cuda-core`
+implements `DeviceCopy` for the scalar and packed storage wrappers. The
+`lowp_roundtrip` example validates typed buffers, conversion, low-lane-first
+packing, `SharedArray` movement, low-precision `DisjointSlice` outputs, and
+by-value fp8x4 kernel arguments on B300 hardware.
+
+This shipped scope is storage, conversion, and movement. Future tensor-core or
+math-library low-precision GEMM surfaces can build on these types without being
+implied by this roadmap item.
 
 ## Notes on Scope
 

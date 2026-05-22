@@ -307,6 +307,26 @@ memory, so the temporary footprint is explicit.
 
 ---
 
+## Low-Precision Storage
+
+```rust
+use cuda_lowp::{Fp4E2M1, Fp4x2E2M1, Fp8E4M3, Fp8E5M2, Fp8x4E4M3};
+
+let e4 = Fp8E4M3::from_f32_sat(1.25);
+let e5 = Fp8E5M2::from_f32_sat(448.0);
+let pair = Fp4x2E2M1::new(Fp4E2M1::from_f32_sat(0.5), Fp4E2M1::from_f32_sat(6.0));
+let group = Fp8x4E4M3::new(e4, e4, e4, e4);
+
+assert_eq!(group.get(0).to_bits(), e4.to_bits());
+assert_eq!(pair.hi().to_f32(), 6.0);
+```
+
+`cuda-lowp` is no-std and shared by host and device code. `cuda_device::lowp`
+re-exports the same types for kernels, and `cuda-core::DeviceBuffer` supports
+the scalar and packed storage types through `DeviceCopy`.
+
+---
+
 ## Tensor Cores — Warp MMA (SM 80+)
 
 ```rust
@@ -466,6 +486,7 @@ debug::prof_trigger::<7>();     // Nsight profiler trigger
 | `fence`              | `threadfence_block` / `threadfence` / `threadfence_system`       | All      |
 | `grid`               | Grid-scoped `sync` (cooperative kernel launches)                 | sm_70+   |
 | `cooperative_groups` | Typed handles, warp/block reductions and scans                   | All      |
+| `lowp`               | FP8/FP4 storage, conversion, comparison, and packing              | All      |
 | `selection`          | Deterministic top-k and block-cooperative row selection          | All      |
 | `barrier`            | `ManagedBarrier` — async mbarrier for TMA/MMA                    | sm_90+   |
 | `cluster`            | Thread block clusters, DSMEM                                     | sm_90+   |

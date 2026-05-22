@@ -116,6 +116,14 @@ roadmap, **N/A** = not applicable or no identified need.
 | cuBLAS strided-batched SGEMM | **Full** | `sgemm_strided_batched` supports packed or caller-specified row-major batches with validated element strides and buffer lengths. |
 | Library/kernel stream composition | **Full** | The `cublas_gemm` example runs cuBLAS work and a Rust-authored kernel on the same stream, then validates results against CPU references. |
 
+## Runtime Library: Low-Precision Storage
+
+| Feature | Status | Description |
+|:--------|:-------|:------------|
+| FP8 E4M3 / E5M2 storage | **Full** | `cuda-lowp` provides no-std `Fp8E4M3` and `Fp8E5M2` wrappers matching CUDA 13.2 `__NV_E4M3` and `__NV_E5M2`, with explicit bits, saturating `f32` conversion, widening, NaN-aware comparison, and fp8x2/fp8x4 packing. |
+| FP4 E2M1 storage | **Full** | `Fp4E2M1`, `Fp4x2E2M1`, and `Fp4x4E2M1` match CUDA `__NV_E2M1` low-nibble packing. NaN narrowing maps to positive maxnorm, matching CUDA headers. |
+| Host/device movement | **Full** | `cuda-core::DeviceCopy` is implemented for scalar and packed low-precision wrappers. The `lowp_roundtrip` example validates typed `DeviceBuffer` transfers, `SharedArray` movement, lowp `DisjointSlice` outputs, by-value fp8x4 arguments, and device conversion on B300. |
+
 ## Runtime Library: Selection
 
 | Feature | Status | Description |
@@ -210,7 +218,6 @@ roadmap, **N/A** = not applicable or no identified need.
 | Feature | Status | Notes |
 |:--------|:-------|:------|
 | Inline Assembly (`asm!` macro) | **Planned** | Workaround: use built-in intrinsics or add new intrinsics to `cuda-device`. |
-| FP8 / MX Data Types | **Planned** | Roadmap item for Blackwell. No architectural limitation. |
 | Dynamic Dispatch (`dyn Trait`) | **N/A** | Use generics with static dispatch. Haven't found a real need for this. |
 | Heap Allocation (`Box`, `Vec`) | **N/A** | CUDA has a device-side heap (`malloc`/`free` in kernels), and the compiler allows the `alloc` crate through -- but no device-side `#[global_allocator]` is wired up today. Even if it were, device `malloc` is extremely slow (serialized, fragmented, uncoalesced). Use slices and `SharedArray`. |
 | `String` / `format_args!` | **N/A** | Use `gpu_printf!` for formatted output. |

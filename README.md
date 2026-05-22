@@ -219,7 +219,7 @@ compiles a Rust kernel to PTX, launches it on the GPU, and prints
 
 ## Examples
 
-**61 examples** in `crates/rustc-codegen-cuda/examples/`. Highlights:
+**62 examples** in `crates/rustc-codegen-cuda/examples/`. Highlights:
 
 | Example              | Description                                                              |
 |----------------------|--------------------------------------------------------------------------|
@@ -228,6 +228,7 @@ compiles a Rust kernel to PTX, launches it on the GPU, and prints
 | `generic`            | Generic kernels with monomorphization (`scale<T>`)                       |
 | `gemm_sol`           | GEMM SoL: 868 TFLOPS (58% cuBLAS on B200), 8 kernels across 4 phases     |
 | `cublas_gemm`        | cuBLAS SGEMM and strided-batched SGEMM composed with a Rust kernel        |
+| `lowp_roundtrip`     | FP8/FP4 typed buffers, packing, shared-memory movement, and conversion    |
 | `topk_select`        | Block-cooperative deterministic top-k selection with shared scratch       |
 | `warp_mma`           | Warp-scoped `m16n8k16` f16/f32 tensor-core tile, CPU reference checked    |
 | `tcgen05`            | Blackwell tensor cores (sm_100a): TMEM, MMA, cta_group::2                |
@@ -243,6 +244,7 @@ compiles a Rust kernel to PTX, launches it on the GPU, and prints
 cargo oxide run vecadd
 cargo oxide run gemm_sol
 cargo oxide run cublas_gemm
+cargo oxide run lowp_roundtrip
 cargo oxide run topk_select
 cargo oxide run warp_mma
 ```
@@ -255,6 +257,7 @@ cargo oxide run warp_mma
 |---------------------|---------------------------------------------------------------------------|
 | `cuda-device`       | Device intrinsics (`thread::*`, `warp::*`, barriers)                      |
 | `cuda-host`         | Typed module loading, launch helpers, LTOIR loader                        |
+| `cuda-lowp`         | FP8/FP4 low-precision storage, conversion, comparison, and packing types   |
 | `cuda-macros`       | Proc macros (`#[cuda_module]`, `#[kernel]`, `gpu_printf!`)                |
 | `cuda-bindings`     | Raw `bindgen` FFI bindings to `cuda.h`                                    |
 | `cuda-core`         | Safe RAII wrappers (`CudaContext`, `CudaStream`, `DeviceBuffer<T>`, residency buffers, `Blas`) |
@@ -301,6 +304,7 @@ cargo oxide run warp_mma
 - Device FFI: Rust <-> C++/CCCL interop via LTOIR
 - MathDx integration: cuFFTDx thread-level FFT, cuBLASDx block-level GEMM
 - Host runtime: `cuda-core` (explicit control, pinned host transfers, memory residency controls, stream-aware cuBLAS SGEMM) and `cuda-async` (composable async operations)
+- Low-precision inference storage: `cuda-lowp` and `cuda_device::lowp` provide CUDA-aligned E4M3/E5M2 FP8 and E2M1 FP4 storage, conversion, packing, comparison, `DeviceBuffer` compatibility, and B300-validated kernel movement
 - Device selection: `cuda_device::selection` provides fixed-capacity deterministic top-k and block-cooperative row selection with caller-provided shared scratch
 - Warp-scoped tensor-core MMA: `cuda_device::mma` lowers shared-memory `ldmatrix` loads and `m16n8k16` f16/f32 `mma.sync`, with a B300-validated `warp_mma` example
 - GEMM SoL: 868 TFLOPS (58% cuBLAS SoL) on B200 with cta_group::2, CLC, 4-stage pipeline

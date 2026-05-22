@@ -101,6 +101,7 @@
      - Claude CLI non-interactive review: no blocking issues.
      - Claude CLI non-interactive review: no blocking issues.
      - Claude CLI non-interactive review: no blocking issues.
+     - Claude CLI non-interactive review: no blocking issues.
 
 ### 2. Production Dense Linear Algebra Integration
 
@@ -387,7 +388,7 @@
 
 ### 5. First-Class Low-Precision Inference Data Types
 
-- Status: in-progress
+- Status: complete
 - Goal: give inference-oriented cuda-oxide programs first-class low-precision
   storage types with explicit conversion, packing, comparison, and
   host/device movement semantics.
@@ -512,7 +513,7 @@
      - Claude CLI non-interactive review: no blocking issues.
 
 4. Docs and roadmap closure
-   - Status: open
+   - Status: complete
    - End-state: README/book/support matrix describe the shipped low-precision
      type story and item 5 is marked complete on this board.
    - Implementation plan:
@@ -521,4 +522,10 @@
      - replace the `FP8 / MX Data Types` planned entry with the shipped scope;
      - keep the roadmap honest about storage/conversion support versus any
        future tensor-core or library-matmul expansion.
-   - Validation: pending.
+   - Validation:
+     - Local example count check: `find crates/rustc-codegen-cuda/examples
+       -maxdepth 1 -mindepth 1 -type d | wc -l` returned 62, matching the
+       root README.
+     - Local `cargo fmt --check`: passed.
+     - Local `git diff --check`: passed.
+     - `PATH=.venv/bin:$PATH make html` in `cuda-oxide-book`: passed.
