@@ -189,6 +189,45 @@ impl Fp8x2E4M3 {
     pub const fn hi(self) -> Fp8E4M3 {
         Fp8E4M3::from_bits((self.0 >> 8) as u8)
     }
+
+    #[inline]
+    pub const fn get(self, index: usize) -> Fp8E4M3 {
+        assert!(index < 2, "Fp8x2E4M3 index out of range");
+        Fp8E4M3::from_bits((self.0 >> (index * 8)) as u8)
+    }
+}
+
+/// Four E4M3 values packed as two CUDA fp8x2 lanes.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct Fp8x4E4M3(u32);
+
+impl Fp8x4E4M3 {
+    #[inline]
+    pub const fn from_bits(bits: u32) -> Self {
+        Self(bits)
+    }
+
+    #[inline]
+    pub const fn to_bits(self) -> u32 {
+        self.0
+    }
+
+    #[inline]
+    pub const fn new(x0: Fp8E4M3, x1: Fp8E4M3, x2: Fp8E4M3, x3: Fp8E4M3) -> Self {
+        Self(
+            (x0.to_bits() as u32)
+                | ((x1.to_bits() as u32) << 8)
+                | ((x2.to_bits() as u32) << 16)
+                | ((x3.to_bits() as u32) << 24),
+        )
+    }
+
+    #[inline]
+    pub const fn get(self, index: usize) -> Fp8E4M3 {
+        assert!(index < 4, "Fp8x4E4M3 index out of range");
+        Fp8E4M3::from_bits((self.0 >> (index * 8)) as u8)
+    }
 }
 
 /// Two E5M2 values packed as CUDA does: low element in bits 0..8.
@@ -220,6 +259,45 @@ impl Fp8x2E5M2 {
     #[inline]
     pub const fn hi(self) -> Fp8E5M2 {
         Fp8E5M2::from_bits((self.0 >> 8) as u8)
+    }
+
+    #[inline]
+    pub const fn get(self, index: usize) -> Fp8E5M2 {
+        assert!(index < 2, "Fp8x2E5M2 index out of range");
+        Fp8E5M2::from_bits((self.0 >> (index * 8)) as u8)
+    }
+}
+
+/// Four E5M2 values packed as two CUDA fp8x2 lanes.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct Fp8x4E5M2(u32);
+
+impl Fp8x4E5M2 {
+    #[inline]
+    pub const fn from_bits(bits: u32) -> Self {
+        Self(bits)
+    }
+
+    #[inline]
+    pub const fn to_bits(self) -> u32 {
+        self.0
+    }
+
+    #[inline]
+    pub const fn new(x0: Fp8E5M2, x1: Fp8E5M2, x2: Fp8E5M2, x3: Fp8E5M2) -> Self {
+        Self(
+            (x0.to_bits() as u32)
+                | ((x1.to_bits() as u32) << 8)
+                | ((x2.to_bits() as u32) << 16)
+                | ((x3.to_bits() as u32) << 24),
+        )
+    }
+
+    #[inline]
+    pub const fn get(self, index: usize) -> Fp8E5M2 {
+        assert!(index < 4, "Fp8x4E5M2 index out of range");
+        Fp8E5M2::from_bits((self.0 >> (index * 8)) as u8)
     }
 }
 
@@ -527,11 +605,31 @@ mod tests {
         assert_eq!(e4.to_bits(), 0x3412);
         assert_eq!(e4.lo().to_bits(), 0x12);
         assert_eq!(e4.hi().to_bits(), 0x34);
+        assert_eq!(e4.get(1).to_bits(), 0x34);
+
+        let e4x4 = Fp8x4E4M3::new(
+            Fp8E4M3::from_bits(0x12),
+            Fp8E4M3::from_bits(0x34),
+            Fp8E4M3::from_bits(0x56),
+            Fp8E4M3::from_bits(0x78),
+        );
+        assert_eq!(e4x4.to_bits(), 0x78563412);
+        assert_eq!(e4x4.get(2).to_bits(), 0x56);
 
         let e5 = Fp8x2E5M2::new(Fp8E5M2::from_bits(0x56), Fp8E5M2::from_bits(0x78));
         assert_eq!(e5.to_bits(), 0x7856);
         assert_eq!(e5.lo().to_bits(), 0x56);
         assert_eq!(e5.hi().to_bits(), 0x78);
+        assert_eq!(e5.get(0).to_bits(), 0x56);
+
+        let e5x4 = Fp8x4E5M2::new(
+            Fp8E5M2::from_bits(0x9a),
+            Fp8E5M2::from_bits(0xbc),
+            Fp8E5M2::from_bits(0xde),
+            Fp8E5M2::from_bits(0xf0),
+        );
+        assert_eq!(e5x4.to_bits(), 0xf0debc9a);
+        assert_eq!(e5x4.get(3).to_bits(), 0xf0);
 
         let e2 = Fp4x2E2M1::new(Fp4E2M1::from_bits(0x3), Fp4E2M1::from_bits(0xc));
         assert_eq!(e2.to_bits(), 0xc3);

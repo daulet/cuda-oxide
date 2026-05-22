@@ -478,7 +478,7 @@
      - Claude CLI non-interactive review: no blocking issues.
 
 3. Inference-style packing API and integration checks
-   - Status: open
+   - Status: complete
    - End-state: kernels have ergonomic helpers for moving low-precision
      vectors through router/indexer and accelerator-adjacent code without
      bespoke bit manipulation at each call site.
@@ -489,7 +489,27 @@
        slices, disjoint output slices, and kernel argument paths;
      - where CUDA exposes a direct storage-data-type mapping, add typed mapping
        helpers rather than open-coded enum constants in examples.
-   - Validation: pending.
+   - Validation:
+     - Local `cargo fmt --check`: passed.
+     - Local `cargo fmt --check --manifest-path
+       crates/rustc-codegen-cuda/examples/lowp_roundtrip/Cargo.toml`: passed.
+     - Local `cargo test -p cuda-lowp -- --nocapture`: passed; 8 unit tests.
+     - Local `rustup run nightly cargo check -p cuda-device`: passed.
+     - Local `git diff --check`: passed.
+     - `CUDA_HOME=/usr/local/cuda cargo test -p cuda-lowp -- --nocapture` in
+       the reusable B300 pod: passed; 8 unit tests.
+     - `CUDA_HOME=/usr/local/cuda cargo check -p cuda-core` in the B300 pod:
+       passed.
+     - `CUDA_HOME=/usr/local/cuda cargo check -p cuda-device` in the B300 pod:
+       passed.
+     - `cargo fmt --check --manifest-path
+       crates/rustc-codegen-cuda/examples/lowp_roundtrip/Cargo.toml` in the
+       B300 pod: passed.
+     - `CUDA_HOME=/usr/local/cuda CUDA_OXIDE_LLC=/usr/bin/llc-21 cargo oxide
+       run lowp_roundtrip` in the B300 pod: passed; auto-detected `sm_103`
+       and validated typed lowp `SharedArray`, lowp `DisjointSlice` outputs,
+       and by-value fp8x4 kernel arguments.
+     - Claude CLI non-interactive review: no blocking issues.
 
 4. Docs and roadmap closure
    - Status: open

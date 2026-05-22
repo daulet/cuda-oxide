@@ -24,7 +24,9 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 
 use cuda_bindings::CUdeviceptr;
-use cuda_lowp::{Fp4E2M1, Fp4x2E2M1, Fp4x4E2M1, Fp8E4M3, Fp8E5M2, Fp8x2E4M3, Fp8x2E5M2};
+use cuda_lowp::{
+    Fp4E2M1, Fp4x2E2M1, Fp4x4E2M1, Fp8E4M3, Fp8E5M2, Fp8x2E4M3, Fp8x2E5M2, Fp8x4E4M3, Fp8x4E5M2,
+};
 
 use crate::context::CudaContext;
 use crate::error::DriverError;
@@ -81,6 +83,8 @@ impl_device_copy!(
     Fp8E5M2,
     Fp8x2E4M3,
     Fp8x2E5M2,
+    Fp8x4E4M3,
+    Fp8x4E5M2,
     f16,
     f32,
     f64

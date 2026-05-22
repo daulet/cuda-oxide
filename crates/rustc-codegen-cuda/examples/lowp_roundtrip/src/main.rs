@@ -9,9 +9,9 @@
 //!   cargo oxide run lowp_roundtrip
 
 use cuda_core::{CudaContext, DeviceBuffer, LaunchConfig};
-use cuda_device::{DisjointSlice, kernel, thread};
+use cuda_device::{DisjointSlice, SharedArray, kernel, thread};
 use cuda_host::cuda_module;
-use cuda_lowp::{Fp4E2M1, Fp4x2E2M1, Fp8E4M3, Fp8E5M2};
+use cuda_lowp::{Fp4E2M1, Fp4x2E2M1, Fp8E4M3, Fp8E5M2, Fp8x4E4M3, Fp8x4E5M2};
 
 const VALUES_U32: u32 = 12;
 const VALUES: usize = VALUES_U32 as usize;
@@ -59,6 +59,53 @@ mod kernels {
             }
         }
     }
+
+    #[kernel]
+    pub fn move_lowp_groups(
+        e4: &[Fp8E4M3],
+        e2_pairs: &[Fp4x2E2M1],
+        e4_group: Fp8x4E4M3,
+        e5_group: Fp8x4E5M2,
+        mut e4_out: DisjointSlice<Fp8E4M3>,
+        mut e2_out: DisjointSlice<Fp4x2E2M1>,
+        mut group_bits: DisjointSlice<u32>,
+    ) {
+        static mut E4_SHARED: SharedArray<Fp8E4M3, VALUES> = SharedArray::UNINIT;
+        static mut E2_SHARED: SharedArray<Fp4x2E2M1, PACKED_FP4> = SharedArray::UNINIT;
+
+        let idx = thread::index_1d().get() as usize;
+
+        if idx < VALUES {
+            unsafe {
+                E4_SHARED[idx] = e4[idx];
+            }
+        }
+        if idx < PACKED_FP4 {
+            unsafe {
+                E2_SHARED[idx] = e2_pairs[idx];
+            }
+        }
+        thread::sync_threads();
+
+        if idx < VALUES {
+            unsafe {
+                *e4_out.get_unchecked_mut(idx) = E4_SHARED[idx];
+            }
+        }
+        if idx < PACKED_FP4 {
+            unsafe {
+                *e2_out.get_unchecked_mut(idx) = E2_SHARED[idx];
+            }
+        }
+        if idx == 0 {
+            unsafe {
+                *group_bits.get_unchecked_mut(0) = e4_group.to_bits();
+                *group_bits.get_unchecked_mut(1) = e5_group.to_bits();
+                *group_bits.get_unchecked_mut(2) = u32::from(e4_group.get(2).to_bits());
+                *group_bits.get_unchecked_mut(3) = u32::from(e5_group.get(3).to_bits());
+            }
+        }
+    }
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -78,6 +125,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map(Fp8E5M2::from_f32_sat)
         .collect::<Vec<_>>();
     let e2_pairs = pack_fp4(&source);
+    let e4_group = Fp8x4E4M3::new(e4[0], e4[1], e4[2], e4[3]);
+    let e5_group = Fp8x4E5M2::new(e5[4], e5[5], e5[6], e5[7]);
 
     let e4_dev = DeviceBuffer::<Fp8E4M3>::from_host(&stream, &e4)?;
     let e5_dev = DeviceBuffer::<Fp8E5M2>::from_host(&stream, &e5)?;
@@ -138,6 +187,44 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "device narrowing bits",
         &narrowed_bits.to_host_vec(&stream)?,
         &narrowed_reference(&source, &e2_pairs),
+    );
+
+    let mut e4_moved = DeviceBuffer::<Fp8E4M3>::zeroed(&stream, VALUES)?;
+    let mut e2_moved = DeviceBuffer::<Fp4x2E2M1>::zeroed(&stream, PACKED_FP4)?;
+    let mut group_bits = DeviceBuffer::<u32>::zeroed(&stream, 4)?;
+
+    module.move_lowp_groups(
+        &stream,
+        LaunchConfig::for_num_elems(VALUES_U32),
+        &e4_dev,
+        &e2_dev,
+        e4_group,
+        e5_group,
+        &mut e4_moved,
+        &mut e2_moved,
+        &mut group_bits,
+    )?;
+    stream.synchronize()?;
+
+    check_bits(
+        "SharedArray e4 typed movement",
+        &e4_moved.to_host_vec(&stream)?,
+        &e4,
+    );
+    check_bits(
+        "SharedArray fp4 pair typed movement",
+        &e2_moved.to_host_vec(&stream)?,
+        &e2_pairs,
+    );
+    check_u32(
+        "by-value packed group args",
+        &group_bits.to_host_vec(&stream)?,
+        &[
+            e4_group.to_bits(),
+            e5_group.to_bits(),
+            u32::from(e4_group.get(2).to_bits()),
+            u32::from(e5_group.get(3).to_bits()),
+        ],
     );
 
     println!("SUCCESS: low-precision typed buffers and device conversions matched host references");
