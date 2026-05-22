@@ -46,3 +46,10 @@
 - CUDA's fp4 `__NV_E2M1` storage uses sign bit `0x8` inside the low nibble,
   not the fp8 sign bit `0x80`; fp4 NaN narrowing saturates to positive
   maxnorm, while fp8 SATFINITE NaN narrowing returns canonical `0x7f`.
+- Device-visible constants in `cuda-lowp` need simple scalar shapes. An
+  `Option<u8>` field in a private format descriptor was rejected by MIR import,
+  and a mixed-field descriptor later produced wrong E4M3 widening on hardware.
+- Avoid device-visible float NaN literals in cuda-oxide generated IR:
+  `f32::NAN` and constant `f32::from_bits(0x7fc0_0000)` folded to textual
+  `nan` that `llc-21` rejected. Build NaNs from runtime integer bits and use
+  `to_bits()` classification instead of `f32::is_nan()` in narrowing paths.

@@ -14,51 +14,6 @@
 
 use core::cmp::Ordering;
 
-#[derive(Clone, Copy)]
-struct Format {
-    sign_bit: u8,
-    abs_mask: u8,
-    mantissa_bits: u8,
-    exponent_bias: i32,
-    max_finite_abs_bits: u8,
-    nan_abs_bits: Option<u8>,
-    has_e5_specials: bool,
-    nan_input_bits: u8,
-}
-
-const E4M3: Format = Format {
-    sign_bit: 0x80,
-    abs_mask: 0x7f,
-    mantissa_bits: 3,
-    exponent_bias: 7,
-    max_finite_abs_bits: 0x7e,
-    nan_abs_bits: Some(0x7f),
-    has_e5_specials: false,
-    nan_input_bits: 0x7f,
-};
-
-const E5M2: Format = Format {
-    sign_bit: 0x80,
-    abs_mask: 0x7f,
-    mantissa_bits: 2,
-    exponent_bias: 15,
-    max_finite_abs_bits: 0x7b,
-    nan_abs_bits: None,
-    has_e5_specials: true,
-    nan_input_bits: 0x7f,
-};
-
-const E2M1: Format = Format {
-    sign_bit: 0x08,
-    abs_mask: 0x07,
-    mantissa_bits: 1,
-    exponent_bias: 1,
-    max_finite_abs_bits: 0x07,
-    nan_abs_bits: None,
-    has_e5_specials: false,
-    nan_input_bits: 0x07,
-};
-
 /// CUDA `__NV_E4M3` fp8 storage.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -80,13 +35,13 @@ impl Fp8E4M3 {
     /// Convert from `f32` using round-to-nearest-even and finite saturation.
     #[inline]
     pub fn from_f32_sat(value: f32) -> Self {
-        Self(encode_sat(value, E4M3))
+        Self(encode_sat(value, 0x80, 0x7f, 3, 7, 0x7e, 0x7f, false, 0x7f))
     }
 
     /// Widen to `f32`.
     #[inline]
     pub fn to_f32(self) -> f32 {
-        decode(self.0, E4M3)
+        decode(self.0, 0x80, 0x7f, 3, 7, 0x7f, false)
     }
 
     /// Returns true for the CUDA E4M3 NaN encodings `0x7f` and `0xff`.
@@ -123,13 +78,13 @@ impl Fp8E5M2 {
     /// Convert from `f32` using round-to-nearest-even and finite saturation.
     #[inline]
     pub fn from_f32_sat(value: f32) -> Self {
-        Self(encode_sat(value, E5M2))
+        Self(encode_sat(value, 0x80, 0x7f, 2, 15, 0x7b, 0xff, true, 0x7f))
     }
 
     /// Widen to `f32`.
     #[inline]
     pub fn to_f32(self) -> f32 {
-        decode(self.0, E5M2)
+        decode(self.0, 0x80, 0x7f, 2, 15, 0xff, true)
     }
 
     /// Returns true for E5M2 NaN encodings.
@@ -168,13 +123,13 @@ impl Fp4E2M1 {
     /// CUDA's E2M1 conversion maps NaN inputs to positive maxnorm.
     #[inline]
     pub fn from_f32_sat(value: f32) -> Self {
-        Self(encode_sat(value, E2M1))
+        Self(encode_sat(value, 0x08, 0x07, 1, 1, 0x07, 0xff, false, 0x07))
     }
 
     /// Widen to `f32`.
     #[inline]
     pub fn to_f32(self) -> f32 {
-        decode(self.to_bits(), E2M1)
+        decode(self.to_bits(), 0x08, 0x07, 1, 1, 0xff, false)
     }
 
     /// E2M1 has no NaN storage encodings.
@@ -334,22 +289,28 @@ impl Fp4x4E2M1 {
 }
 
 #[inline]
-fn decode(bits: u8, format: Format) -> f32 {
-    let sign = bits & format.sign_bit;
-    let abs_bits = bits & format.abs_mask;
+fn decode(
+    bits: u8,
+    sign_bit: u8,
+    abs_mask: u8,
+    mantissa_bits: u8,
+    exponent_bias: i32,
+    nan_abs_bits: u8,
+    has_e5_specials: bool,
+) -> f32 {
+    let sign = bits & sign_bit;
+    let abs_bits = bits & abs_mask;
 
-    if let Some(nan_abs_bits) = format.nan_abs_bits {
-        if abs_bits == nan_abs_bits {
-            return f32::NAN;
-        }
+    if nan_abs_bits != 0xff && abs_bits == nan_abs_bits {
+        return canonical_nan(bits);
     }
 
-    let exp_mask = format.abs_mask >> format.mantissa_bits;
-    let mant_mask = (1u8 << format.mantissa_bits) - 1;
-    let exponent = (abs_bits >> format.mantissa_bits) & exp_mask;
+    let exp_mask = abs_mask >> mantissa_bits;
+    let mant_mask = (1u8 << mantissa_bits) - 1;
+    let exponent = (abs_bits >> mantissa_bits) & exp_mask;
     let mantissa = abs_bits & mant_mask;
 
-    if format.has_e5_specials && exponent == exp_mask {
+    if has_e5_specials && exponent == exp_mask {
         if mantissa == 0 {
             return if sign == 0 {
                 f32::INFINITY
@@ -357,49 +318,70 @@ fn decode(bits: u8, format: Format) -> f32 {
                 f32::NEG_INFINITY
             };
         }
-        return f32::NAN;
+        return canonical_nan(bits);
     }
 
     let value = if exponent == 0 {
         if mantissa == 0 {
             0.0
         } else {
-            (mantissa as f32) * pow2(1 - format.exponent_bias - i32::from(format.mantissa_bits))
+            (mantissa as f32) * pow2(1 - exponent_bias - i32::from(mantissa_bits))
         }
     } else {
-        ((1u32 << format.mantissa_bits) as f32 + mantissa as f32)
-            * pow2(i32::from(exponent) - format.exponent_bias - i32::from(format.mantissa_bits))
+        ((1u32 << mantissa_bits) as f32 + mantissa as f32)
+            * pow2(i32::from(exponent) - exponent_bias - i32::from(mantissa_bits))
     };
 
     if sign == 0 { value } else { -value }
 }
 
 #[inline]
-fn encode_sat(value: f32, format: Format) -> u8 {
-    if value.is_nan() {
-        return format.nan_input_bits;
+fn encode_sat(
+    value: f32,
+    sign_bit: u8,
+    abs_mask: u8,
+    mantissa_bits: u8,
+    exponent_bias: i32,
+    max_finite_abs_bits: u8,
+    nan_abs_bits: u8,
+    has_e5_specials: bool,
+    nan_input_bits: u8,
+) -> u8 {
+    let value_bits = value.to_bits();
+    let abs_bits = value_bits & 0x7fff_ffff;
+
+    if abs_bits > 0x7f80_0000 {
+        return nan_input_bits;
     }
 
-    let sign = if (value.to_bits() & 0x8000_0000) == 0 {
+    let sign = if (value_bits & 0x8000_0000) == 0 {
         0
     } else {
-        format.sign_bit
+        sign_bit
     };
-    let abs = f32::from_bits(value.to_bits() & 0x7fff_ffff);
+    let abs = f32::from_bits(abs_bits);
 
     if abs == 0.0 {
         return sign;
     }
 
-    if abs.is_infinite() {
-        return sign | format.max_finite_abs_bits;
+    if abs_bits == 0x7f80_0000 {
+        return sign | max_finite_abs_bits;
     }
 
     let mut best_bits = 0u8;
     let mut best_diff = f32::INFINITY;
     let mut candidate = 0u8;
-    while candidate <= format.max_finite_abs_bits {
-        let candidate_value = decode(candidate, format);
+    while candidate <= max_finite_abs_bits {
+        let candidate_value = decode(
+            candidate,
+            sign_bit,
+            abs_mask,
+            mantissa_bits,
+            exponent_bias,
+            nan_abs_bits,
+            has_e5_specials,
+        );
         let diff = if abs >= candidate_value {
             abs - candidate_value
         } else {
@@ -411,7 +393,7 @@ fn encode_sat(value: f32, format: Format) -> u8 {
             best_diff = diff;
         }
 
-        if candidate == format.max_finite_abs_bits {
+        if candidate == max_finite_abs_bits {
             break;
         }
         candidate += 1;
@@ -424,6 +406,11 @@ fn encode_sat(value: f32, format: Format) -> u8 {
 fn pow2(exponent: i32) -> f32 {
     debug_assert!((-126..=127).contains(&exponent));
     f32::from_bits(((exponent + 127) as u32) << 23)
+}
+
+#[inline]
+fn canonical_nan(bits: u8) -> f32 {
+    f32::from_bits(0x7fc0_0000 | u32::from(bits & 1))
 }
 
 #[inline]

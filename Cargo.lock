@@ -342,6 +342,7 @@ dependencies = [
  "anyhow",
  "cublas-sys",
  "cuda-bindings",
+ "cuda-lowp",
  "half",
  "oxide-artifacts",
 ]

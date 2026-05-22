@@ -439,7 +439,7 @@
      - Claude CLI non-interactive review: no blocking issues.
 
 2. Host runtime movement and device conversion proof
-   - Status: open
+   - Status: complete
    - End-state: low-precision values can be stored in `DeviceBuffer`s,
      transferred between host and device as typed values, and converted inside
      a Rust-authored kernel.
@@ -450,7 +450,32 @@
        widens them, and checks host/device agreement;
      - cover edge cases explicitly: signed zeros, saturation, infinities, NaN,
        tie rounding, and packed nibble/byte ordering.
-   - Validation: pending.
+   - Validation:
+     - Local `cargo fmt --check`: passed.
+     - Local `cargo fmt --check --manifest-path
+       crates/rustc-codegen-cuda/examples/lowp_roundtrip/Cargo.toml`: passed.
+     - Local `cargo test -p cuda-lowp -- --nocapture`: passed; 8 unit tests.
+     - Local `rustup run nightly cargo check -p cuda-device`: passed.
+     - Local `git diff --check`: passed.
+     - Local `rustup run nightly cargo check -p cuda-core`: blocked by missing
+       local CUDA headers at `/usr/local/cuda/include/cuda.h`; validation moved
+       to the B300 pod.
+     - `CUDA_HOME=/usr/local/cuda cargo fmt --check` in the reusable B300 pod:
+       passed.
+     - `CUDA_HOME=/usr/local/cuda cargo test -p cuda-lowp -- --nocapture` in
+       the B300 pod: passed; 8 unit tests.
+     - `CUDA_HOME=/usr/local/cuda cargo check -p cuda-core` in the B300 pod:
+       passed.
+     - `CUDA_HOME=/usr/local/cuda cargo check -p cuda-device` in the B300 pod:
+       passed.
+     - `cargo fmt --check --manifest-path
+       crates/rustc-codegen-cuda/examples/lowp_roundtrip/Cargo.toml` in the
+       B300 pod: passed.
+     - `CUDA_HOME=/usr/local/cuda CUDA_OXIDE_LLC=/usr/bin/llc-21 cargo oxide
+       run lowp_roundtrip` in the B300 pod: passed; auto-detected `sm_103`
+       and printed `SUCCESS: low-precision typed buffers and device
+       conversions matched host references`.
+     - Claude CLI non-interactive review: no blocking issues.
 
 3. Inference-style packing API and integration checks
    - Status: open

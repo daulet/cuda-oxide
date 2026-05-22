@@ -11,6 +11,7 @@ repository.workspace = true
 cuda-bindings = { path = "../cuda-bindings" }
 cublas-sys = { workspace = true }
 anyhow = { workspace = true }
+cuda-lowp = { workspace = true }
 half = { workspace = true }
 oxide-artifacts = { workspace = true, features = ["object-read"] }
 
