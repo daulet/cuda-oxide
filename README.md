@@ -219,7 +219,7 @@ compiles a Rust kernel to PTX, launches it on the GPU, and prints
 
 ## Examples
 
-**47 examples** in `crates/rustc-codegen-cuda/examples/`. Highlights:
+**58 examples** in `crates/rustc-codegen-cuda/examples/`. Highlights:
 
 | Example              | Description                                                              |
 |----------------------|--------------------------------------------------------------------------|
@@ -227,6 +227,7 @@ compiles a Rust kernel to PTX, launches it on the GPU, and prints
 | `host_closure`       | Generic kernels with closures passed from host                           |
 | `generic`            | Generic kernels with monomorphization (`scale<T>`)                       |
 | `gemm_sol`           | GEMM SoL: 868 TFLOPS (58% cuBLAS on B200), 8 kernels across 4 phases     |
+| `cublas_gemm`        | cuBLAS SGEMM and strided-batched SGEMM composed with a Rust kernel        |
 | `tcgen05`            | Blackwell tensor cores (sm_100a): TMEM, MMA, cta_group::2                |
 | `atomics`            | GPU atomics: 6 types x 3 scopes x 5 orderings (20 tests)                 |
 | `cluster`            | Thread Block Clusters + DSMEM ring exchange (Hopper+)                    |
@@ -239,6 +240,7 @@ compiles a Rust kernel to PTX, launches it on the GPU, and prints
 ```bash
 cargo oxide run vecadd
 cargo oxide run gemm_sol
+cargo oxide run cublas_gemm
 ```
 
 ## Crate Overview
@@ -251,10 +253,11 @@ cargo oxide run gemm_sol
 | `cuda-host`         | Typed module loading, launch helpers, LTOIR loader                        |
 | `cuda-macros`       | Proc macros (`#[cuda_module]`, `#[kernel]`, `gpu_printf!`)                |
 | `cuda-bindings`     | Raw `bindgen` FFI bindings to `cuda.h`                                    |
-| `cuda-core`         | Safe RAII wrappers (`CudaContext`, `CudaStream`, `DeviceBuffer<T>`, residency buffers) |
+| `cuda-core`         | Safe RAII wrappers (`CudaContext`, `CudaStream`, `DeviceBuffer<T>`, residency buffers, `Blas`) |
 | `cuda-async`        | Async execution layer (`DeviceOperation`, `DeviceFuture`, `DeviceBox<T>`) |
 | `libnvvm-sys`       | `dlopen` bindings to libNVVM (used by `cuda-host::ltoir`)                 |
 | `nvjitlink-sys`     | `dlopen` bindings to nvJitLink (used by `cuda-host::ltoir`)               |
+| `cublas-sys`        | `dlopen` bindings to cuBLAS (used by `cuda-core::Blas`)                   |
 
 ### Compiler Crates
 
@@ -293,7 +296,7 @@ cargo oxide run gemm_sol
 - LTOIR generation for Blackwell+ (device-side LTO)
 - Device FFI: Rust <-> C++/CCCL interop via LTOIR
 - MathDx integration: cuFFTDx thread-level FFT, cuBLASDx block-level GEMM
-- Host runtime: `cuda-core` (explicit control, pinned host transfers, memory residency controls) and `cuda-async` (composable async operations)
+- Host runtime: `cuda-core` (explicit control, pinned host transfers, memory residency controls, stream-aware cuBLAS SGEMM) and `cuda-async` (composable async operations)
 - GEMM SoL: 868 TFLOPS (58% cuBLAS SoL) on B200 with cta_group::2, CLC, 4-stage pipeline
 
 ## Documentation

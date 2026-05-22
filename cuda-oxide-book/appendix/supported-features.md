@@ -108,6 +108,14 @@ roadmap, **N/A** = not applicable or no identified need.
 | `RegisteredHostMemory<'a, T>` | **Full** | Registers an existing mutable host slice for GPU access and ties unregistration to the borrow lifetime. |
 | Residency policy hook | **Full** | `ResidencyBuffer<T>::zeroed_with` and `from_slice_with` let applications choose managed or mapped-host allocation from a `ResidencyRequest`. |
 
+## Runtime Library: Dense Linear Algebra
+
+| Feature | Status | Description |
+|:--------|:-------|:------------|
+| cuBLAS SGEMM integration | **Full** | `cuda_core::Blas` exposes row-major `sgemm` over `DeviceBuffer<f32>` and enqueues work on a caller-provided `CudaStream`. |
+| cuBLAS strided-batched SGEMM | **Full** | `sgemm_strided_batched` supports packed or caller-specified row-major batches with validated element strides and buffer lengths. |
+| Library/kernel stream composition | **Full** | The `cublas_gemm` example runs cuBLAS work and a Rust-authored kernel on the same stream, then validates results against CPU references. |
+
 ## Runtime Library: Atomics
 
 | Feature | Status | Description |

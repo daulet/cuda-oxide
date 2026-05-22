@@ -102,7 +102,7 @@
 
 ### 2. Production Dense Linear Algebra Integration
 
-- Status: in-progress
+- Status: complete
 - Goal: let cuda-oxide host programs call production dense linear algebra from
   the same stream, context, and buffer ownership model as Rust-authored kernels.
 - Source surface: a runtime cuBLAS binding, `crates/cuda-core`, examples,
@@ -192,10 +192,21 @@
      - Claude CLI non-interactive review: no blocking issues.
 
 4. Docs and roadmap closure
-   - Status: open
+   - Status: complete
    - End-state: README/book/support matrix describe the shipped dense linear
      algebra integration and item 2 is marked complete on this board.
-   - Validation: doc/source consistency review plus reviewer gate before commit.
+   - Implementation plan:
+     - update the root README examples, status highlights, and crate map for
+       `cublas_gemm`, `cuda_core::Blas`, and `cublas-sys`;
+     - document the `Blas` surface in `crates/cuda-core/README.md` and the
+       book API quick reference;
+     - mark dense linear algebra support shipped in the supported-features
+       matrix and capability roadmap.
+   - Validation:
+     - Local `cargo fmt --check`: passed.
+     - Local `git diff --check`: passed.
+     - `PATH=.venv/bin:$PATH make html` in `cuda-oxide-book`: passed.
+     - Claude CLI non-interactive review: no blocking issues.
 
 ## Remaining roadmap items
 

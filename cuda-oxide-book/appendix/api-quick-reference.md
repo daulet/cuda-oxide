@@ -365,6 +365,39 @@ explicit module loading and custom launch code.
 
 ---
 
+## Host-Side: Dense Linear Algebra
+
+```rust
+use cuda_core::{Blas, DeviceBuffer, SgemmConfig};
+
+let blas = Blas::new(&ctx)?;
+let a_dev = DeviceBuffer::from_host(&stream, &a_host)?;
+let b_dev = DeviceBuffer::from_host(&stream, &b_host)?;
+let mut c_dev = DeviceBuffer::from_host(&stream, &c_host)?;
+
+let mut config = SgemmConfig::new(m, n, k);
+config.alpha = 1.0;
+config.beta = 0.0;
+blas.sgemm(&stream, config, &a_dev, &b_dev, &mut c_dev)?;
+```
+
+`cuda_core::Blas` is a RAII cuBLAS handle tied to a `CudaContext`. The public
+GEMM APIs use ordinary Rust row-major matrix layout, operate on
+`DeviceBuffer<f32>`, validate dimensions and buffer lengths before entering
+cuBLAS, and enqueue on the caller-provided `CudaStream`.
+
+| Method                     | Purpose                                                   |
+|:---------------------------|:----------------------------------------------------------|
+| `Blas::new(&ctx)`          | Create a cuBLAS handle for the CUDA context               |
+| `Blas::version()`          | Query the loaded cuBLAS version                           |
+| `Blas::sgemm(...)`         | Enqueue row-major `C = alpha * A * B + beta * C`          |
+| `Blas::sgemm_strided_batched(...)` | Enqueue row-major strided-batched SGEMM          |
+
+See `crates/rustc-codegen-cuda/examples/cublas_gemm` for a complete example
+that runs cuBLAS work and a Rust-authored kernel on the same stream.
+
+---
+
 ## Debug Facilities
 
 ```rust
@@ -409,7 +442,8 @@ debug::prof_trigger::<7>();     // Nsight profiler trigger
 | `cuda-device`     | Device intrinsics and types (`#![no_std]`)                             |
 | `cuda-macros`     | Proc macros (`#[kernel]`, `#[device]`, `gpu_printf!`)                  |
 | `cuda-host`       | Typed module loading plus low-level launch helpers                     |
-| `cuda-core`       | Safe RAII wrappers (`CudaContext`, `CudaStream`, device and residency buffers) |
+| `cuda-core`       | Safe RAII wrappers (`CudaContext`, `CudaStream`, device/residency buffers, `Blas`) |
 | `cuda-async`      | `DeviceOperation`, `DeviceFuture`, `DeviceBox<T>`                      |
 | `cuda-bindings`   | Raw `bindgen` FFI to `cuda.h`                                          |
+| `cublas-sys`      | Runtime-loaded cuBLAS bindings used by `cuda-core::Blas`               |
 | `cargo-oxide`     | Cargo subcommand (`cargo oxide run`, `build`, `debug`)                 |

@@ -35,25 +35,27 @@ out of the cuda-oxide ecosystem for the entire feature. The
 
 ## Production Dense Linear Algebra Integration
 
-Large transformer workloads rely on high-throughput dense linear algebra in
-multiple places: projection layers, prefill paths, output projections, and
-batched attention substeps. Custom kernels alone are not always the right
-building block for these paths.
+Status: shipped. Large transformer workloads rely on high-throughput dense
+linear algebra in multiple places: projection layers, prefill paths, output
+projections, and batched attention substeps. Custom kernels alone are not
+always the right building block for these paths.
 
-The missing functionality is a supported integration story for production-grade
-dense linear algebra that can participate cleanly in cuda-oxide programs:
+cuda-oxide now provides a supported runtime path for workflows that need:
 
-- matrix multiplication and batched matrix multiplication used in inference
-  hot paths,
-- stream-aware execution and synchronization that composes with cuda-oxide
-  host runtimes,
-- compatibility with cuda-oxide buffer ownership and launch orchestration,
-- a clear path for workloads that want to combine custom Rust kernels with
-  highly optimized external math engines.
+- `cuda_core::Blas` as a RAII cuBLAS handle tied to a `CudaContext`,
+- row-major `f32` matrix multiplication through `Blas::sgemm`,
+- row-major strided-batched `f32` matrix multiplication through
+  `Blas::sgemm_strided_batched`,
+- execution on a caller-provided `CudaStream`,
+- compatibility with `DeviceBuffer<f32>` ownership and validation before
+  entering cuBLAS,
+- a way to combine optimized library GEMM with Rust-authored kernels in the
+  same cuda-oxide launch flow.
 
-This roadmap item is about capability coverage, not about prescribing whether
-that coverage is provided natively, through library bindings, or through a
-hybrid model.
+The goal is capability coverage, not native reimplementation of every dense
+linear algebra primitive. The `cublas_gemm` example exercises the shipped path
+by running regular and strided-batched SGEMM, then launching a Rust kernel on
+the same stream.
 
 ## Warp-Scoped Matrix Multiply Acceleration
 
