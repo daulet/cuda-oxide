@@ -77,7 +77,10 @@ pub use event::CudaEvent;
 pub use launch::LaunchConfig;
 pub use module::{CudaFunction, CudaModule};
 pub use pinned_host_buffer::PinnedHostBuffer;
-pub use residency::{ManagedBuffer, MappedHostBuffer, RegisteredHostMemory};
+pub use residency::{
+    ManagedBuffer, MappedHostBuffer, MemoryAdvice, MemoryLocation, RegisteredHostMemory,
+    ResidencyBuffer, ResidencyRequest, ResidencyStrategy, StreamAttachment,
+};
 pub use stream::CudaStream;
 
 use std::ffi::c_uint;

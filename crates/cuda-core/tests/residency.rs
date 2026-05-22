@@ -3,7 +3,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-use cuda_core::{CudaContext, ManagedBuffer, MappedHostBuffer, RegisteredHostMemory};
+use cuda_core::{
+    CudaContext, ManagedBuffer, MappedHostBuffer, MemoryAdvice, MemoryLocation,
+    RegisteredHostMemory, ResidencyBuffer, ResidencyStrategy, StreamAttachment,
+};
 
 #[test]
 fn managed_buffer_exposes_host_slice_and_device_pointer() {
@@ -28,6 +31,73 @@ fn managed_buffer_from_slice_preserves_input() {
         ManagedBuffer::<u32>::from_slice(&ctx, &[5, 6, 7, 8]).expect("failed to allocate managed");
 
     assert_eq!(buffer.as_slice(), &[5, 6, 7, 8]);
+}
+
+#[test]
+fn managed_buffer_supports_advice_prefetch_and_stream_attachment() {
+    let ctx = CudaContext::new(0).expect("failed to create CUDA context");
+    let stream = ctx.new_stream().expect("failed to create CUDA stream");
+    let buffer =
+        ManagedBuffer::<u32>::from_slice(&ctx, &[1, 2, 3, 4]).expect("failed to allocate managed");
+    let device = MemoryLocation::Device(ctx.cu_device());
+
+    buffer
+        .advise(MemoryAdvice::SetPreferredLocation(device))
+        .expect("failed to set preferred location");
+    buffer
+        .advise(MemoryAdvice::SetAccessedBy(device))
+        .expect("failed to set accessed-by");
+    buffer
+        .advise(MemoryAdvice::SetReadMostly)
+        .expect("failed to set read-mostly");
+    buffer
+        .prefetch_to(&stream, device)
+        .expect("failed to prefetch to device");
+    buffer
+        .attach_to_stream(&stream, StreamAttachment::Single)
+        .expect("failed to attach to stream");
+    buffer
+        .attach_to_stream(&stream, StreamAttachment::Global)
+        .expect("failed to restore global attachment");
+    stream.synchronize().expect("failed to synchronize stream");
+
+    buffer
+        .advise(MemoryAdvice::UnsetReadMostly)
+        .expect("failed to unset read-mostly");
+    buffer
+        .advise(MemoryAdvice::UnsetAccessedBy(device))
+        .expect("failed to unset accessed-by");
+    buffer
+        .advise(MemoryAdvice::UnsetPreferredLocation)
+        .expect("failed to unset preferred location");
+    buffer
+        .prefetch_to(&stream, MemoryLocation::Host)
+        .expect("failed to prefetch to host");
+    buffer
+        .attach_to_stream(&stream, StreamAttachment::Host)
+        .expect("failed to attach to host");
+    buffer
+        .attach_to_stream(&stream, StreamAttachment::Global)
+        .expect("failed to restore global attachment");
+    stream.synchronize().expect("failed to synchronize stream");
+}
+
+#[test]
+fn managed_buffer_controls_skip_empty_allocations() {
+    let ctx = CudaContext::new(0).expect("failed to create CUDA context");
+    let stream = ctx.new_stream().expect("failed to create CUDA stream");
+    let buffer =
+        ManagedBuffer::<u32>::zeroed(&ctx, 0).expect("failed to create empty managed buffer");
+
+    buffer
+        .advise(MemoryAdvice::SetReadMostly)
+        .expect("empty advice should be a no-op");
+    buffer
+        .prefetch_to(&stream, MemoryLocation::Device(ctx.cu_device()))
+        .expect("empty prefetch should be a no-op");
+    buffer
+        .attach_to_stream(&stream, StreamAttachment::Single)
+        .expect("empty stream attach should be a no-op");
 }
 
 #[test]
@@ -127,4 +197,31 @@ fn residency_handles_support_zero_sized_types() {
     assert_eq!(registered.len(), 8);
     assert_eq!(registered.num_bytes(), 0);
     assert_eq!(registered.as_slice(), &[(); 8]);
+}
+
+#[test]
+fn residency_policy_selects_managed_or_mapped_host() {
+    let ctx = CudaContext::new(0).expect("failed to create CUDA context");
+
+    let managed = ResidencyBuffer::<u32>::zeroed_with(&ctx, 4, |request| {
+        assert_eq!(request.len(), 4);
+        assert_eq!(request.num_bytes(), 16);
+        ResidencyStrategy::Managed
+    })
+    .expect("failed to allocate policy-selected managed buffer");
+    assert!(matches!(managed, ResidencyBuffer::Managed(_)));
+    assert_eq!(managed.as_slice(), &[0, 0, 0, 0]);
+
+    let mapped = ResidencyBuffer::<u32>::from_slice_with(&ctx, &[7, 8, 9, 10], |request| {
+        assert!(!request.is_empty());
+        assert_eq!(request.num_bytes(), 16);
+        ResidencyStrategy::MappedHost
+    })
+    .expect("failed to allocate policy-selected mapped host buffer");
+    assert!(matches!(mapped, ResidencyBuffer::MappedHost(_)));
+    assert_eq!(mapped.as_slice(), &[7, 8, 9, 10]);
+    assert_eq!(mapped.len(), 4);
+    assert_eq!(mapped.num_bytes(), 16);
+    assert_ne!(mapped.cu_deviceptr(), 0);
+    assert!(format!("{mapped:?}").contains("MappedHost"));
 }

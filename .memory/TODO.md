@@ -40,11 +40,29 @@
      - Claude CLI non-interactive review: no blocking issues on second pass.
 
 2. Residency controls and policy hook
-   - Status: open
+   - Status: complete
    - End-state: callers can attach placement advice, prefetch managed regions
      asynchronously on a chosen stream, and select among residency strategies
      through a compact runtime-facing API rather than bespoke ad hoc calls.
-   - Validation: targeted `cargo test -p cuda-core` plus focused API tests.
+   - Implementation plan:
+     - add raw `cuMemAdvise`, `cuMemPrefetchAsync`, and
+       `cuStreamAttachMemAsync` wrappers to `crates/cuda-core/src/memory.rs`;
+     - expose typed managed-memory controls for placement/access advice,
+       asynchronous prefetch, and stream attachment;
+     - add a compact owned residency policy path that lets applications choose
+       managed or mapped-host allocation from a request descriptor;
+     - cover the control calls and policy allocation path with focused
+       `cuda-core` tests.
+   - Validation:
+     - Local `cargo fmt --check`: passed.
+     - `cargo fmt --check` in reusable `default/cuda-oxide-b300` pod on
+       `hou2-prod1`: passed.
+     - `CUDA_HOME=/usr/local/cuda cargo test -p cuda-core --test residency
+       -- --nocapture` in the B300 pod: passed; 10 residency tests.
+     - `CUDA_HOME=/usr/local/cuda cargo test -p cuda-core -- --nocapture` in
+       the B300 pod: passed; 3 unit tests, 7 pinned-host tests, 10 residency
+       tests, 2 VMM/P2P tests, and doctests.
+     - Claude CLI non-interactive review: no blocking issues.
 
 3. Example and hardware verification
    - Status: open

@@ -21,6 +21,257 @@ use cuda_bindings::CUdeviceptr;
 use crate::context::CudaContext;
 use crate::device_buffer::DeviceCopy;
 use crate::error::DriverError;
+use crate::stream::CudaStream;
+
+/// Destination or processor location for managed-memory controls.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MemoryLocation {
+    /// Host memory.
+    Host,
+    /// Device memory for a CUDA device handle.
+    Device(cuda_bindings::CUdevice),
+}
+
+impl MemoryLocation {
+    fn cu_location(self) -> cuda_bindings::CUmemLocation {
+        let mut location: cuda_bindings::CUmemLocation = unsafe { std::mem::zeroed() };
+        let (location_type, id) = match self {
+            MemoryLocation::Host => (
+                cuda_bindings::CUmemLocationType_enum_CU_MEM_LOCATION_TYPE_HOST,
+                0,
+            ),
+            MemoryLocation::Device(device) => (
+                cuda_bindings::CUmemLocationType_enum_CU_MEM_LOCATION_TYPE_DEVICE,
+                device,
+            ),
+        };
+
+        location.type_ = location_type;
+        // CUDA 13.2 wraps `id` in an anonymous union while older headers expose
+        // it directly. The field sits immediately after `type_` in both layouts.
+        unsafe {
+            let base = &mut location as *mut _ as *mut u8;
+            (base.add(4) as *mut i32).write(id);
+        }
+        location
+    }
+}
+
+/// Managed-memory advice accepted by [`ManagedBuffer::advise`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MemoryAdvice {
+    /// Mark the range as mostly read by processors.
+    SetReadMostly,
+    /// Undo [`SetReadMostly`](Self::SetReadMostly).
+    UnsetReadMostly,
+    /// Set the preferred residency location.
+    SetPreferredLocation(MemoryLocation),
+    /// Clear the preferred residency location.
+    UnsetPreferredLocation,
+    /// Pre-map the range for access by a processor.
+    SetAccessedBy(MemoryLocation),
+    /// Remove an accessed-by mapping.
+    UnsetAccessedBy(MemoryLocation),
+}
+
+impl MemoryAdvice {
+    fn raw(self) -> (cuda_bindings::CUmem_advise, MemoryLocation) {
+        match self {
+            MemoryAdvice::SetReadMostly => (
+                cuda_bindings::CUmem_advise_enum_CU_MEM_ADVISE_SET_READ_MOSTLY,
+                MemoryLocation::Host,
+            ),
+            MemoryAdvice::UnsetReadMostly => (
+                cuda_bindings::CUmem_advise_enum_CU_MEM_ADVISE_UNSET_READ_MOSTLY,
+                MemoryLocation::Host,
+            ),
+            MemoryAdvice::SetPreferredLocation(location) => (
+                cuda_bindings::CUmem_advise_enum_CU_MEM_ADVISE_SET_PREFERRED_LOCATION,
+                location,
+            ),
+            MemoryAdvice::UnsetPreferredLocation => (
+                cuda_bindings::CUmem_advise_enum_CU_MEM_ADVISE_UNSET_PREFERRED_LOCATION,
+                MemoryLocation::Host,
+            ),
+            MemoryAdvice::SetAccessedBy(location) => (
+                cuda_bindings::CUmem_advise_enum_CU_MEM_ADVISE_SET_ACCESSED_BY,
+                location,
+            ),
+            MemoryAdvice::UnsetAccessedBy(location) => (
+                cuda_bindings::CUmem_advise_enum_CU_MEM_ADVISE_UNSET_ACCESSED_BY,
+                location,
+            ),
+        }
+    }
+}
+
+/// Stream association for managed memory.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StreamAttachment {
+    /// Any stream on any device may access the memory.
+    Global,
+    /// Host-only attachment until the association is changed again.
+    Host,
+    /// Only the selected non-default stream may access the memory.
+    Single,
+}
+
+impl StreamAttachment {
+    fn flag(self) -> cuda_bindings::CUmemAttach_flags {
+        match self {
+            StreamAttachment::Global => cuda_bindings::CUmemAttach_flags_enum_CU_MEM_ATTACH_GLOBAL,
+            StreamAttachment::Host => cuda_bindings::CUmemAttach_flags_enum_CU_MEM_ATTACH_HOST,
+            StreamAttachment::Single => cuda_bindings::CUmemAttach_flags_enum_CU_MEM_ATTACH_SINGLE,
+        }
+    }
+}
+
+/// Owned residency strategy selected by an application policy.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ResidencyStrategy {
+    /// Allocate CUDA managed memory.
+    Managed,
+    /// Allocate mapped page-locked host memory.
+    MappedHost,
+}
+
+/// Allocation request passed to residency policy closures.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ResidencyRequest {
+    len: usize,
+    num_bytes: usize,
+}
+
+impl ResidencyRequest {
+    /// Number of requested elements.
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    /// Returns `true` if the request has zero elements.
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    /// Requested byte size after checked `len * size_of::<T>()` arithmetic.
+    #[inline]
+    pub fn num_bytes(&self) -> usize {
+        self.num_bytes
+    }
+
+    fn new<T>(len: usize) -> Result<Self, DriverError> {
+        Ok(Self {
+            len,
+            num_bytes: allocation_size::<T>(len)?,
+        })
+    }
+}
+
+/// Owned buffer selected by a residency policy.
+#[derive(Debug)]
+pub enum ResidencyBuffer<T: DeviceCopy> {
+    /// Managed-memory allocation.
+    Managed(ManagedBuffer<T>),
+    /// Mapped-host allocation.
+    MappedHost(MappedHostBuffer<T>),
+}
+
+impl<T: DeviceCopy> ResidencyBuffer<T> {
+    /// Allocates zeroed memory using `choose` to select the residency strategy.
+    pub fn zeroed_with(
+        ctx: &Arc<CudaContext>,
+        len: usize,
+        choose: impl FnOnce(ResidencyRequest) -> ResidencyStrategy,
+    ) -> Result<Self, DriverError> {
+        let request = ResidencyRequest::new::<T>(len)?;
+        match choose(request) {
+            ResidencyStrategy::Managed => ManagedBuffer::zeroed(ctx, len).map(Self::Managed),
+            ResidencyStrategy::MappedHost => {
+                MappedHostBuffer::zeroed(ctx, len).map(Self::MappedHost)
+            }
+        }
+    }
+
+    /// Allocates memory using `choose` and copies `data` into the selected
+    /// residency strategy.
+    pub fn from_slice_with(
+        ctx: &Arc<CudaContext>,
+        data: &[T],
+        choose: impl FnOnce(ResidencyRequest) -> ResidencyStrategy,
+    ) -> Result<Self, DriverError> {
+        let request = ResidencyRequest::new::<T>(data.len())?;
+        match choose(request) {
+            ResidencyStrategy::Managed => ManagedBuffer::from_slice(ctx, data).map(Self::Managed),
+            ResidencyStrategy::MappedHost => {
+                MappedHostBuffer::from_slice(ctx, data).map(Self::MappedHost)
+            }
+        }
+    }
+
+    /// Number of elements in the buffer.
+    #[inline]
+    pub fn len(&self) -> usize {
+        match self {
+            Self::Managed(buffer) => buffer.len(),
+            Self::MappedHost(buffer) => buffer.len(),
+        }
+    }
+
+    /// Returns `true` if the buffer contains no elements.
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Total size in bytes.
+    #[inline]
+    pub fn num_bytes(&self) -> usize {
+        match self {
+            Self::Managed(buffer) => buffer.num_bytes(),
+            Self::MappedHost(buffer) => buffer.num_bytes(),
+        }
+    }
+
+    /// Returns the CUDA context used to allocate this buffer.
+    #[inline]
+    pub fn context(&self) -> &Arc<CudaContext> {
+        match self {
+            Self::Managed(buffer) => buffer.context(),
+            Self::MappedHost(buffer) => buffer.context(),
+        }
+    }
+
+    /// Returns the device-visible pointer.
+    ///
+    /// Empty and zero-sized buffers return `0`.
+    #[inline]
+    pub fn cu_deviceptr(&self) -> CUdeviceptr {
+        match self {
+            Self::Managed(buffer) => buffer.cu_deviceptr(),
+            Self::MappedHost(buffer) => buffer.cu_deviceptr(),
+        }
+    }
+
+    /// Returns the buffer as a host slice.
+    #[inline]
+    pub fn as_slice(&self) -> &[T] {
+        match self {
+            Self::Managed(buffer) => buffer.as_slice(),
+            Self::MappedHost(buffer) => buffer.as_slice(),
+        }
+    }
+
+    /// Returns the buffer as a mutable host slice.
+    #[inline]
+    pub fn as_mut_slice(&mut self) -> &mut [T] {
+        match self {
+            Self::Managed(buffer) => buffer.as_mut_slice(),
+            Self::MappedHost(buffer) => buffer.as_mut_slice(),
+        }
+    }
+}
 
 /// Managed CUDA memory owned by Rust.
 ///
@@ -133,6 +384,87 @@ impl<T: DeviceCopy> ManagedBuffer<T> {
     #[inline]
     pub fn as_mut_slice(&mut self) -> &mut [T] {
         unsafe { slice::from_raw_parts_mut(self.ptr.as_ptr(), self.len) }
+    }
+
+    /// Applies Unified Memory advice to the whole allocation.
+    ///
+    /// Empty and zero-sized buffers have no driver-side allocation, so this is
+    /// a no-op for them.
+    pub fn advise(&self, advice: MemoryAdvice) -> Result<(), DriverError> {
+        if self.num_bytes == 0 {
+            return Ok(());
+        }
+
+        self.ctx.bind_to_thread()?;
+        let (advice, location) = advice.raw();
+        unsafe {
+            crate::memory::mem_advise(
+                self.device_ptr,
+                self.num_bytes,
+                advice,
+                location.cu_location(),
+            )
+        }
+    }
+
+    /// Enqueues a prefetch of the whole allocation to `location` on `stream`.
+    ///
+    /// Empty and zero-sized buffers have no driver-side allocation, so this is
+    /// a no-op for them.
+    pub fn prefetch_to(
+        &self,
+        stream: &CudaStream,
+        location: MemoryLocation,
+    ) -> Result<(), DriverError> {
+        debug_assert!(
+            Arc::ptr_eq(&self.ctx, stream.context()),
+            "managed buffer and stream must belong to the same CUDA context"
+        );
+        if self.num_bytes == 0 {
+            return Ok(());
+        }
+
+        stream.context().bind_to_thread()?;
+        unsafe {
+            crate::memory::mem_prefetch_async(
+                self.device_ptr,
+                self.num_bytes,
+                location.cu_location(),
+                stream.cu_stream(),
+            )
+        }
+    }
+
+    /// Enqueues a stream association change for the whole allocation.
+    ///
+    /// Empty and zero-sized buffers have no driver-side allocation, so this is
+    /// a no-op for them.
+    pub fn attach_to_stream(
+        &self,
+        stream: &CudaStream,
+        attachment: StreamAttachment,
+    ) -> Result<(), DriverError> {
+        debug_assert!(
+            Arc::ptr_eq(&self.ctx, stream.context()),
+            "managed buffer and stream must belong to the same CUDA context"
+        );
+        assert!(
+            !(stream.cu_stream().is_null() && attachment == StreamAttachment::Single),
+            "single-stream managed-memory attachment requires a non-default stream"
+        );
+        if self.num_bytes == 0 {
+            return Ok(());
+        }
+
+        stream.context().bind_to_thread()?;
+        unsafe {
+            crate::memory::stream_attach_mem_async(
+                stream.cu_stream(),
+                self.device_ptr,
+                self.num_bytes,
+                attachment.flag(),
+            )
+        }
     }
 
     fn allocate(ctx: &Arc<CudaContext>, len: usize) -> Result<Self, DriverError> {

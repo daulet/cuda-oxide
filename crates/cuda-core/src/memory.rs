@@ -299,3 +299,56 @@ pub unsafe fn host_register_mapped(ptr: *mut c_void, num_bytes: usize) -> Result
 pub unsafe fn host_unregister(ptr: *mut c_void) -> Result<(), DriverError> {
     unsafe { cuda_bindings::cuMemHostUnregister(ptr) }.result()
 }
+
+/// Applies CUDA managed-memory advice to a memory range.
+///
+/// # Safety
+///
+/// - `dptr` must refer to at least `num_bytes` of managed memory or another
+///   host-accessible range accepted by `cuMemAdvise`.
+/// - `location` must satisfy the selected advice.
+/// - A CUDA context must be bound to the calling thread.
+pub unsafe fn mem_advise(
+    dptr: CUdeviceptr,
+    num_bytes: usize,
+    advice: cuda_bindings::CUmem_advise,
+    location: cuda_bindings::CUmemLocation,
+) -> Result<(), DriverError> {
+    unsafe { cuda_bindings::cuMemAdvise_v2(dptr, num_bytes, advice, location) }.result()
+}
+
+/// Enqueues a managed-memory prefetch to `location` on `stream`.
+///
+/// # Safety
+///
+/// - `dptr` must refer to at least `num_bytes` of managed memory.
+/// - `stream` must be a valid CUDA stream from a context compatible with the
+///   destination location.
+/// - The caller must order host and device access according to CUDA's Unified
+///   Memory model.
+pub unsafe fn mem_prefetch_async(
+    dptr: CUdeviceptr,
+    num_bytes: usize,
+    location: cuda_bindings::CUmemLocation,
+    stream: cuda_bindings::CUstream,
+) -> Result<(), DriverError> {
+    unsafe { cuda_bindings::cuMemPrefetchAsync_v2(dptr, num_bytes, location, 0, stream) }.result()
+}
+
+/// Enqueues a managed-memory stream association change.
+///
+/// # Safety
+///
+/// - `dptr` must refer to at least `num_bytes` of managed memory.
+/// - `stream` must be a valid CUDA stream. `CU_MEM_ATTACH_SINGLE` must not be
+///   used with the null default stream.
+/// - The caller must order later accesses so kernels only touch memory from
+///   legal streams for the selected attachment.
+pub unsafe fn stream_attach_mem_async(
+    stream: cuda_bindings::CUstream,
+    dptr: CUdeviceptr,
+    num_bytes: usize,
+    flags: cuda_bindings::CUmemAttach_flags,
+) -> Result<(), DriverError> {
+    unsafe { cuda_bindings::cuStreamAttachMemAsync(stream, dptr, num_bytes, flags) }.result()
+}
