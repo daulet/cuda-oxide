@@ -24,6 +24,7 @@
 //! - [`ManagedBuffer`], [`MappedHostBuffer`], and [`RegisteredHostMemory`] --
 //!   memory residency handles for large CUDA-facing regions.
 //! - [`LaunchConfig`] -- grid/block dimension helper.
+//! - [`Blas`] -- stream-aware cuBLAS dense linear algebra integration.
 //! - [`memory`] -- free functions for device allocation, transfer, and memset
 //!   (both stream-ordered async and synchronous variants).
 //!
@@ -40,6 +41,8 @@
 
 #![feature(f16)]
 
+/// Stream-aware cuBLAS dense linear algebra integration.
+pub mod blas;
 /// CUDA context management (primary context, RAII).
 pub mod context;
 /// Owning device memory buffer with host-device transfer helpers.
@@ -67,6 +70,7 @@ pub mod stream;
 /// CUDA Virtual Memory Management (VMM) for physical alloc, VA reservation, and mapping.
 pub mod vmm;
 
+pub use blas::{Blas, BlasError, SgemmConfig, StridedBatchedSgemmConfig};
 pub use context::CudaContext;
 /// Raw CUDA driver bindings re-exported for direct access when needed.
 pub use cuda_bindings as sys;

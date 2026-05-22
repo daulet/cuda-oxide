@@ -106,10 +106,6 @@ pub enum CublasError {
 // ============================================================================
 
 /// Loaded cuBLAS library plus resolved function pointers.
-///
-/// Hold one of these for the lifetime of any [`Handle`] that borrows it.
-/// `LibCublas` owns the underlying `dlopen` handle; dropping it unloads the
-/// library, which invalidates any function pointers obtained from it.
 pub struct LibCublas {
     _lib: Library,
     create: unsafe extern "C" fn(*mut CublasHandle) -> CublasStatus,
@@ -207,16 +203,21 @@ impl LibCublas {
 
 /// RAII wrapper around a `cublasHandle_t`.
 ///
-/// The handle is destroyed on drop. `Handle` borrows the [`LibCublas`] that
-/// created it, so the library outlives the cuBLAS handle.
-pub struct Handle<'a> {
-    cublas: &'a LibCublas,
+/// The handle owns the [`LibCublas`] that created it, so the library remains
+/// loaded until after `cublasDestroy_v2` runs.
+pub struct Handle {
+    cublas: LibCublas,
     handle: CublasHandle,
 }
 
-impl<'a> Handle<'a> {
+impl Handle {
+    /// Load cuBLAS and create a handle from it.
+    pub fn load() -> Result<Self, CublasError> {
+        Self::new(LibCublas::load()?)
+    }
+
     /// Create a cuBLAS handle.
-    pub fn new(cublas: &'a LibCublas) -> Result<Self, CublasError> {
+    pub fn new(cublas: LibCublas) -> Result<Self, CublasError> {
         let mut handle = CublasHandle(ptr::null_mut());
         let status = unsafe { (cublas.create)(&mut handle) };
         check(status, "cublasCreate_v2")?;
@@ -338,7 +339,7 @@ impl<'a> Handle<'a> {
     }
 }
 
-impl Drop for Handle<'_> {
+impl Drop for Handle {
     fn drop(&mut self) {
         unsafe {
             (self.cublas.destroy)(self.handle);
@@ -408,8 +409,7 @@ mod tests {
 
     #[test]
     fn loads_library_and_queries_version() {
-        let cublas = LibCublas::load().expect("cuBLAS library should load");
-        let handle = Handle::new(&cublas).expect("cuBLAS handle should be created");
+        let handle = Handle::load().expect("cuBLAS handle should be created");
         let version = handle
             .version()
             .expect("cuBLAS version should be available");
@@ -418,8 +418,7 @@ mod tests {
 
     #[test]
     fn binds_default_stream() {
-        let cublas = LibCublas::load().expect("cuBLAS library should load");
-        let handle = Handle::new(&cublas).expect("cuBLAS handle should be created");
+        let handle = Handle::load().expect("cuBLAS handle should be created");
         handle
             .set_stream(ptr::null_mut())
             .expect("cuBLAS should accept the default stream");

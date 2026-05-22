@@ -15,3 +15,12 @@
 - CUDA 13.2 cuBLAS keeps `_v2` suffixes on create/destroy/version/set-stream
   and `cublasSgemm_v2`, but `cublasSgemmStridedBatched` is exported without a
   `_v2` suffix. Resolve that exact mixed symbol set when using `dlopen`.
+- CUDA stream tests that return after an expected pre-call validation error
+  still need to synchronize if earlier setup enqueued async allocation, copy, or
+  memset work. Dropping `DeviceBuffer`s with that setup work still in flight can
+  make later tests crash even though the validation path never called the GPU
+  library under test.
+- In `cuda-core` BLAS tests, separate `#[test]` cases for cuBLAS work crashed
+  under the default Rust test harness even with a process-local mutex, while
+  isolated tests and `--test-threads=1` passed. Keep related cuBLAS cases inside
+  one test when they share one device/primary context.

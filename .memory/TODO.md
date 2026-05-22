@@ -138,7 +138,7 @@
        queried version, and bound the default stream.
 
 2. Stream-aware `cuda-core` GEMM API
-   - Status: open
+   - Status: complete
    - End-state: `cuda-core` exposes safe row-major `sgemm` and
      `sgemm_strided_batched` entry points that operate on `DeviceBuffer<f32>`
      and enqueue work on a caller-provided `CudaStream`.
@@ -151,7 +151,25 @@
        compatibility layer or alternate fallback kernel;
      - cover single and strided-batched GEMM with B300 tests against CPU
        reference results.
-   - Validation: reusable B300 pod in `hou2-prod1`, exact command/log capture.
+   - Validation:
+     - Local `cargo fmt --check`: passed.
+     - Local `git diff --check`: passed.
+     - Local `cargo check -p cuda-core`: blocked by missing local CUDA headers
+       at `/usr/local/cuda/include/cuda.h`; validation moved to the B300 pod.
+     - `CUDA_HOME=/usr/local/cuda cargo fmt --check` in the reusable
+       `default/cuda-oxide-b300` pod on `hou2-prod1`: passed.
+     - `CUDA_HOME=/usr/local/cuda cargo test -p cublas-sys -- --nocapture` in
+       the B300 pod: passed after adapting the sys handle ownership for
+       `cuda-core`.
+     - `CUDA_HOME=/usr/local/cuda cargo check -p cuda-core` in the B300 pod:
+       passed.
+     - `CUDA_HOME=/usr/local/cuda cargo test -p cuda-core --test blas
+       -- --nocapture` in the B300 pod: passed; 1 BLAS integration test
+       covering single GEMM, strided-batched GEMM, and validation.
+     - `CUDA_HOME=/usr/local/cuda cargo test -p cuda-core -- --nocapture` in
+       the B300 pod: passed; 3 unit tests, 1 BLAS test, 7 pinned-host tests,
+       10 residency tests, 2 VMM/P2P tests, and doctests.
+     - Claude CLI non-interactive review: no blocking issues.
 
 3. Example and orchestration proof
    - Status: open

@@ -340,6 +340,7 @@ name = "cuda-core"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "cublas-sys",
  "cuda-bindings",
  "half",
  "oxide-artifacts",
