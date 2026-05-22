@@ -100,12 +100,77 @@
      - `PATH=.venv/bin:$PATH make html` in `cuda-oxide-book`: passed.
      - Claude CLI non-interactive review: no blocking issues.
 
-## Remaining roadmap items
-
 ### 2. Production Dense Linear Algebra Integration
 
-- Status: open
-- Plan: not started. Write a milestone plan before implementation begins.
+- Status: in-progress
+- Goal: let cuda-oxide host programs call production dense linear algebra from
+  the same stream, context, and buffer ownership model as Rust-authored kernels.
+- Source surface: a runtime cuBLAS binding, `crates/cuda-core`, examples,
+  tests, README/book/support matrix when the item is complete.
+- Required evidence:
+  - matrix multiplication for inference-style hot paths,
+  - strided batched matrix multiplication,
+  - stream-aware execution that composes with `CudaStream`,
+  - `DeviceBuffer` ownership compatibility,
+  - a runnable example combining optimized library math with cuda-oxide
+    orchestration.
+
+#### Planned milestones
+
+1. Runtime cuBLAS binding and handle lifecycle
+   - Status: complete
+   - End-state: the workspace has a minimal runtime-loaded cuBLAS binding with
+     typed status errors, version probing, handle creation/destruction, and
+     stream binding primitives.
+   - Implementation plan:
+     - add a `cublas-sys` crate following the existing `libnvvm-sys` and
+       `nvjitlink-sys` `dlopen` style;
+     - resolve only the symbols needed for item 2: create/destroy, version,
+       set-stream, `Sgemm`, and `SgemmStridedBatched`;
+     - add focused tests that load CUDA 13.2 cuBLAS from the reusable B300 pod.
+   - Validation:
+     - `CUDA_HOME=/usr/local/cuda cargo fmt --check` in the reusable
+       `default/cuda-oxide-b300` pod on `hou2-prod1`: passed.
+     - `CUDA_HOME=/usr/local/cuda cargo check -p cublas-sys` in the B300 pod:
+       passed.
+     - `CUDA_HOME=/usr/local/cuda cargo test -p cublas-sys -- --nocapture` in
+       the B300 pod: passed; 2 runtime tests loaded cuBLAS, created a handle,
+       queried version, and bound the default stream.
+
+2. Stream-aware `cuda-core` GEMM API
+   - Status: open
+   - End-state: `cuda-core` exposes safe row-major `sgemm` and
+     `sgemm_strided_batched` entry points that operate on `DeviceBuffer<f32>`
+     and enqueue work on a caller-provided `CudaStream`.
+   - Implementation plan:
+     - add a `cuda_core::blas` module with a RAII cuBLAS handle bound to a
+       `CudaContext`;
+     - validate dimensions/strides against buffer lengths before calling
+       cuBLAS;
+     - implement row-major wrappers over cuBLAS column-major calls without a
+       compatibility layer or alternate fallback kernel;
+     - cover single and strided-batched GEMM with B300 tests against CPU
+       reference results.
+   - Validation: reusable B300 pod in `hou2-prod1`, exact command/log capture.
+
+3. Example and orchestration proof
+   - Status: open
+   - End-state: a `cargo oxide run` example demonstrates cuBLAS GEMM composed
+     with cuda-oxide-managed buffers, streams, and a Rust-authored kernel.
+   - Implementation plan:
+     - add a dense linear algebra example that runs a custom Rust kernel before
+       or after cuBLAS work on the same stream;
+     - exercise both regular and strided-batched GEMM paths;
+     - verify correctness on the reusable B300 pod.
+   - Validation: reusable B300 pod in `hou2-prod1`, exact command/log capture.
+
+4. Docs and roadmap closure
+   - Status: open
+   - End-state: README/book/support matrix describe the shipped dense linear
+     algebra integration and item 2 is marked complete on this board.
+   - Validation: doc/source consistency review plus reviewer gate before commit.
+
+## Remaining roadmap items
 
 ### 3. Warp-Scoped Matrix Multiply Acceleration
 

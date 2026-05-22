@@ -12,3 +12,6 @@
   PTX. LLVM 18 produced `.version 6.0` PTX and failed CUDA JIT with
   `DriverError(218, "a PTX JIT compilation failed")`; `llc-21` fixes the
   `cargo oxide run` path when passed through `CUDA_OXIDE_LLC=/usr/bin/llc-21`.
+- CUDA 13.2 cuBLAS keeps `_v2` suffixes on create/destroy/version/set-stream
+  and `cublasSgemm_v2`, but `cublasSgemmStridedBatched` is exported without a
+  `_v2` suffix. Resolve that exact mixed symbol set when using `dlopen`.
