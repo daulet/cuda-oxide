@@ -9,10 +9,10 @@ TFLOPS of FP16 MMA, while the same chip's scalar FP16 throughput is roughly
 deep learning, HPC, and signal processing workloads do — tensor cores are
 where the performance lives.
 
-cuda-oxide provides access to two generations of matrix accelerators:
-**WGMMA** on Hopper (SM 90) and **tcgen05** on Blackwell (SM 100). This
-chapter covers both, their programming models, and how they connect to the
-TMA and barrier machinery from the previous chapters.
+cuda-oxide provides access to three matrix accelerator paths: warp-scoped
+**mma.sync** on SM 80+, **WGMMA** on Hopper (SM 90), and **tcgen05** on
+Blackwell datacenter parts (SM 100). This chapter covers their programming
+models and how they connect to shared memory, TMA, and barrier machinery.
 
 :::{seealso}
 [CUDA Programming Guide — Warpgroup Level Matrix Operations](https://docs.nvidia.com/cuda/cuda-programming-guide/#warpgroup-level-matrix-operations)
@@ -28,16 +28,50 @@ synchronization requirements.
 :align: center
 :width: 100%
 
-Data paths for Hopper WGMMA and Blackwell tcgen05. Both read operands from
-shared memory via descriptors. WGMMA accumulates into per-thread registers
-(warpgroup-collective). tcgen05 accumulates into dedicated Tensor Memory
-(TMEM), issued by a single thread.
+Data paths for warp MMA, Hopper WGMMA, and Blackwell tcgen05. Warp MMA reads
+fragments with `ldmatrix` and accumulates in per-thread registers. WGMMA reads
+operands from shared memory via descriptors. tcgen05 accumulates into dedicated
+Tensor Memory (TMEM), issued by a single thread.
 ```
 
 The evolution across generations follows a clear trend: operands move closer
 to the compute units, the issuing scope widens, and the programmer writes
 fewer instructions for larger tiles. cuda-oxide tracks this evolution with
 generation-specific APIs rather than a one-size-fits-all abstraction.
+
+---
+
+## Warp MMA — SM 80+
+
+Warp-scoped MMA uses a single warp (32 threads) to compute a small matrix tile.
+The shipped cuda-oxide path covers the common
+`m16n8k16.row.col.f32.f16.f16.f32` shape:
+
+```rust
+use cuda_device::mma::{
+    load_a_m16n8k16, load_b_m16n8k16, mma_m16n8k16_f32_f16, zero_accumulator,
+};
+
+let mut acc = zero_accumulator();
+
+// After the current A/B K tile has been staged into shared memory:
+let a = unsafe { load_a_m16n8k16(a_tile_row_ptr) };
+let b = unsafe { load_b_m16n8k16(b_tile_row_ptr) };
+acc = unsafe { mma_m16n8k16_f32_f16(acc, a, b) };
+```
+
+`load_a_m16n8k16` lowers to
+`ldmatrix.sync.aligned.m8n8.x4.shared.b16`,
+`load_b_m16n8k16` lowers to
+`ldmatrix.sync.aligned.m8n8.x2.trans.shared.b16`, and
+`mma_m16n8k16_f32_f16` lowers to
+`mma.sync.aligned.m16n8k16.row.col.f32.f16.f16.f32`.
+
+Every lane must participate in the same dynamic control flow. The row pointers
+passed to `ldmatrix` are per-lane shared-memory addresses for the 8x8
+submatrices that make up the 16x8x16 MMA operation. For a complete runnable
+example, see `crates/rustc-codegen-cuda/examples/warp_mma`, which computes a
+16x8 result tile over K=32 and checks every element against a CPU reference.
 
 ---
 
@@ -270,15 +304,15 @@ Check the target architecture before reaching for the tcgen05 API.
 
 ## Choosing the right accelerator
 
-| Feature           | WGMMA (Hopper)          | tcgen05 (Blackwell DC)  | mma.sync (Ampere/consumer) |
-| :---------------- | :---------------------- | :---------------------- | :------------------------- |
-| Issue model       | Warpgroup (128 threads) | Single thread           | Warp (32 threads)          |
-| Accumulator       | Registers               | TMEM (dedicated)        | Registers                  |
-| Max tile (M×N)    | 64×256                  | 256×256                 | 16×8                       |
-| Async execution   | Yes (commit+barrier)    | Yes (commit+barrier)    | Synchronous                |
-| TMA integration   | Native                  | Native + multicast CG2  | Manual loads               |
-| Cluster support   | Yes                     | Yes + CG2               | No                         |
-| Minimum SM        | 90 (Hopper)             | 100a (Blackwell DC)     | 80 (Ampere)                |
+| Feature           | mma.sync (SM 80+)   | WGMMA (Hopper)          | tcgen05 (Blackwell DC) |
+| :---------------- | :------------------ | :---------------------- | :--------------------- |
+| Issue model       | Warp (32 threads)   | Warpgroup (128 threads) | Single thread          |
+| Accumulator       | Registers           | Registers               | TMEM (dedicated)       |
+| Max tile (M×N)    | 16×8                | 64×256                  | 256×256                |
+| Async execution   | Synchronous         | Yes (commit+barrier)    | Yes (commit+barrier)   |
+| TMA integration   | Manual shared loads | Native                  | Native + multicast CG2 |
+| Cluster support   | No                  | Yes                     | Yes + CG2              |
+| Minimum SM        | 80 (Ampere)         | 90 (Hopper)             | 100a (Blackwell DC)    |
 
 For most users, the choice is determined by the target GPU. If you are
 writing a library that targets multiple architectures, you will need
@@ -294,7 +328,7 @@ combines every technique from this chapter and the preceding ones:
 
 1. **TMA** loads tiles from global to shared memory (no thread loads)
 2. **Barriers** track TMA completion per stage
-3. **MMA instructions** (WGMMA or tcgen05) consume tiles from shared memory
+3. **MMA instructions** (`mma.sync`, WGMMA, or tcgen05) consume tiles from shared memory
 4. **Multi-stage pipeline** overlaps load of tile *k+1* with MMA on tile *k*
 5. **Warp specialization** dedicates some warps to loading, others to MMA
 6. **Epilog** (tcgen05) loads from TMEM, converts precision, stores via TMA

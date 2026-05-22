@@ -14,7 +14,7 @@ dialect-nvvm ops
 
 ## Operations by GPU Generation
 
-123 operations across 12 modules, spanning three GPU generations:
+126 operations across 13 modules, spanning four GPU feature generations:
 
 ### Universal (all GPUs)
 
@@ -30,6 +30,12 @@ dialect-nvvm ops
 | Module   | Ops | Highlights                                               |
 |----------|-----|----------------------------------------------------------|
 | `atomic` | 4   | Atomic load, store, RMW, cmpxchg with ordering/scope     |
+
+### Ampere+ (sm_80)
+
+| Module | Ops | Highlights                                                                   |
+|--------|-----|------------------------------------------------------------------------------|
+| `mma`  | 3   | `ldmatrix` A/B fragment loads and `m16n8k16` f16-input/f32-accumulator MMA  |
 
 ### Hopper+ (sm_90)
 
@@ -87,6 +93,7 @@ src/
     ├── cluster.rs   # Thread block clusters, DSMEM
     ├── mbarrier.rs  # Async barriers for TMA
     ├── tma.rs       # Tensor Memory Accelerator copies
+    ├── mma.rs       # Warp-scoped ldmatrix + mma.sync
     ├── wgmma.rs     # Warpgroup MMA (Hopper)
     ├── stmatrix.rs  # Shared memory matrix stores
     ├── tcgen05.rs   # 5th-gen tensor cores + TMEM (Blackwell)

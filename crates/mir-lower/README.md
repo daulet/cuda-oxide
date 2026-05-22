@@ -103,6 +103,7 @@ For each `MirFuncOp`, `convert_func` (in `lowering.rs`):
 | `cluster`  | Block clusters, DSMEM                   | LLVM intrinsics | sm_90+    |
 | `tma`      | Tensor Memory Accelerator               | LLVM intrinsics | sm_90+    |
 | `stmatrix` | Shared memory matrix store              | Inline PTX      | sm_90+    |
+| `mma`      | Warp-scoped `ldmatrix` + `mma.sync`     | Inline PTX      | sm_80+    |
 | `wgmma`    | Warpgroup MMA                           | Inline PTX      | sm_90     |
 | `tcgen05`  | 5th-gen Tensor Cores, TMEM              | Inline PTX      | sm_100+   |
 | `clc`      | Cluster Launch Control                  | LLVM intrinsics | sm_100+   |
@@ -136,7 +137,7 @@ dialect-llvm:             call i32 @llvm.nvvm.read.ptx.sreg.tid.x()
 
 ### Inline PTX Assembly
 
-For complex operations or when LLVM intrinsics don't exist (WGMMA,
+For complex operations or when LLVM intrinsics don't exist (warp MMA, WGMMA,
 tcgen05, stmatrix). Uses `convergent` attribute to prevent LLVM from
 moving warp-synchronous ops across control flow:
 

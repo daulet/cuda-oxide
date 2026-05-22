@@ -288,6 +288,26 @@ let val = cluster::dsmem_read_u32(remote_ptr);
 
 ---
 
+## Tensor Cores — Warp MMA (SM 80+)
+
+```rust
+use cuda_device::mma::{
+    load_a_m16n8k16, load_b_m16n8k16, mma_m16n8k16_f32_f16, zero_accumulator,
+};
+
+let mut acc = zero_accumulator();
+let a = unsafe { load_a_m16n8k16(a_tile_row_ptr) };
+let b = unsafe { load_b_m16n8k16(b_tile_row_ptr) };
+acc = unsafe { mma_m16n8k16_f32_f16(acc, a, b) };
+```
+
+Warp MMA uses one warp, shared-memory `ldmatrix` fragment loads, and f32
+register accumulation for the `m16n8k16` f16 path. Repeat the MMA call across
+K tiles to build larger GEMM tiles. See
+`crates/rustc-codegen-cuda/examples/warp_mma`.
+
+---
+
 ## Tensor Cores — WGMMA (Hopper, SM 90)
 
 ```rust
@@ -430,6 +450,7 @@ debug::prof_trigger::<7>();     // Nsight profiler trigger
 | `barrier`            | `ManagedBarrier` — async mbarrier for TMA/MMA                    | sm_90+   |
 | `cluster`            | Thread block clusters, DSMEM                                     | sm_90+   |
 | `tma`                | `TmaDescriptor`, bulk tensor copies (1D–5D)                      | sm_90+   |
+| `mma`                | Warp-scoped `m16n8k16` tensor-core MMA                           | sm_80+   |
 | `wgmma`              | Warpgroup MMA (fence/commit/wait)                                | sm_90    |
 | `tcgen05`            | 5th-gen tensor cores, TMEM, `TmemGuard`                          | sm_100+  |
 | `cusimd`             | `CuSimd<T, N>`, `Float2`/`Float4`                                | All      |

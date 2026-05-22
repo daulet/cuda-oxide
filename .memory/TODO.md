@@ -99,6 +99,7 @@
      - Local `git diff --check`: passed.
      - `PATH=.venv/bin:$PATH make html` in `cuda-oxide-book`: passed.
      - Claude CLI non-interactive review: no blocking issues.
+     - Claude CLI non-interactive review: no blocking issues.
 
 ### 2. Production Dense Linear Algebra Integration
 
@@ -212,7 +213,7 @@
 
 ### 3. Warp-Scoped Matrix Multiply Acceleration
 
-- Status: in-progress
+- Status: complete
 - Goal: let cuda-oxide kernels use warp-scoped tensor-core MMA for targets and
   tile shapes where WGMMA or tcgen05 are not the right fit.
 - Source surface: `crates/cuda-device`, MIR importer/lowerer NVVM intrinsic
@@ -301,10 +302,13 @@
      - Claude CLI non-interactive review: no blocking issues.
 
 3. Docs and roadmap closure
-   - Status: open
+   - Status: complete
    - End-state: README/book/support matrix describe warp-scoped MMA support and
      item 3 is marked complete on this board.
-   - Validation: doc/source consistency review plus reviewer gate before commit.
+   - Validation:
+     - Local `cargo fmt --check`: passed.
+     - Local `git diff --check`: passed.
+     - `PATH=.venv/bin:$PATH make html` in `cuda-oxide-book`: passed.
 
 ### 4. Scalable Device-Side Selection and Sorting Primitives
 

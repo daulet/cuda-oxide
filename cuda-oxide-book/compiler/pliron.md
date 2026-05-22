@@ -46,7 +46,7 @@ levels of abstraction:
 | :----------------- | :------------------------------------------------------------ | :------------------------------------------- |
 | **`dialect-mir`**  | Rust semantics -- tuples, enums, slices, checked arithmetic   | `mir.extract_field`, `mir.get_discriminant`  |
 | **`dialect-llvm`** | Machine-near operations -- integer math, memory, control flow | `llvm.add`, `llvm.load`, `llvm.br`           |
-| **`dialect-nvvm`** | GPU intrinsics -- thread indexing, warp shuffles, TMA, WGMMA  | `nvvm.read_ptx_sreg_tid_x`, `nvvm.shfl_sync` |
+| **`dialect-nvvm`** | GPU intrinsics -- thread indexing, warp shuffles, TMA, MMA, WGMMA | `nvvm.read_ptx_sreg_tid_x`, `nvvm.shfl_sync` |
 
 Without an extensible IR, we would have to either jam Rust enums into LLVM IR
 (losing semantic information) or build separate IR frameworks for each level of

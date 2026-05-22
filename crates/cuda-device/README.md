@@ -13,6 +13,7 @@
   │  disjoint   shared     atomic      debug    │
   │  fence      grid       coop_grps            │
   │                                             │
+  │  mma                                        │  Ampere+
   │  tma        wgmma      stmatrix    cluster  │  Hopper+
   │  tcgen05    clc                             │  Blackwell+
   └─────────────────────────────────────────────┘
@@ -38,6 +39,7 @@
 | `barrier`            | `Barrier`, `ManagedBarrier<State, Kind>` -- async mbarrier for TMA           | sm_90+  |
 | `cluster`            | Thread block clusters, DSMEM (`map_shared_rank`), `cluster_sync`             | sm_90+  |
 | `tma`                | `TmaDescriptor`, bulk tensor copies (1D-5D global↔shared, multicast)         | sm_90+  |
+| `mma`                | Warp-scoped `m16n8k16` f16/f32 MMA with `ldmatrix` fragment loads            | sm_80+  |
 | `wgmma`              | Warpgroup MMA fence/commit/wait, smem descriptors, bf16/f16/tf32 MMA         | sm_90   |
 | `tcgen05`            | 5th-gen tensor cores: TMEM alloc/dealloc, MMA, stmatrix, CG2 variants        | sm_100+ |
 | `cusimd`             | `CuSimd<T, N>` vector register type, `Float2`/`Float4`/`TmemRegs*` aliases   | All     |
@@ -112,6 +114,8 @@ COUNTER.fetch_add(1, AtomicOrdering::Relaxed);
 
 **TMA** (`tma` module): Hardware DMA via `TmaDescriptor`. Async bulk tensor copies in 1D-5D between global and shared memory, with multicast and CTA-group-2 variants.
 
+**MMA** (`mma` module): Warp-scoped tensor-core path for `m16n8k16` f16 inputs and f32 accumulators. `load_a_m16n8k16` / `load_b_m16n8k16` lower to `ldmatrix`, and `mma_m16n8k16_f32_f16` lowers to `mma.sync.aligned.m16n8k16.row.col.f32.f16.f16.f32`.
+
 **WGMMA** (`wgmma` module): Warpgroup MMA for Hopper -- fence/commit/wait pipeline, shared memory descriptors, bf16/f16/tf32 accumulate operations.
 
 **tcgen05** (`tcgen05` module): Blackwell 5th-gen tensor cores with Tensor Memory (TMEM). `TmemGuard<State, N_COLS>` manages TMEM lifetime with typestate. Includes MMA operations, SMEM↔TMEM copies, stmatrix stores, descriptor builders, bf16 packing helpers, and CTA-pair (cg2) variants.
@@ -151,7 +155,7 @@ These are defined in `cuda-macros` and re-exported from `cuda-device` for conven
 1. **`ThreadIndex`** -- unconstructible except via trusted functions; guarantees unique indices
 2. **`DisjointSlice::get_mut()`** -- bounds-checked `Option<&mut T>`; `get_unchecked_mut()` is the explicit `unsafe` escape
 3. **`SharedArray` / `DynamicSharedArray`** -- `!Sync`; all access via `static mut` requires `unsafe`
-4. **Barriers, TMA, WGMMA, tcgen05** -- all `unsafe` functions; caller ensures synchronization semantics
+4. **Barriers, TMA, MMA, WGMMA, tcgen05** -- all `unsafe` functions; caller ensures synchronization semantics
 5. **Atomics** -- `unsafe impl Sync`; ordering semantics match CUDA scoped atomics
 
 ## Further Reading

@@ -119,6 +119,7 @@ The `examples/` directory contains standalone kernel crates that exercise differ
 | `printf`                     | Device-side `printf` via FFI                         |
 | `tma_copy`                   | Tensor Memory Accelerator copies (Hopper+)           |
 | `tma_multicast`              | TMA with multicast across CTAs                       |
+| `warp_mma`                   | Warp-scoped `m16n8k16` tensor-core tile              |
 | `wgmma`                      | Warpgroup MMA (Hopper tensor cores)                  |
 | `tcgen05` / `tcgen05_matmul` | 5th-gen tensor cores (Blackwell datacenter)          |
 | `gemm` / `gemm_sol`          | GEMM implementations at various optimization levels  |

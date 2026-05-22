@@ -146,9 +146,11 @@ Lowers to `llvm.nvvm.barrier0()`.
 
 ## Tensor Cores
 
-Specialized matrix multiply-accumulate hardware units. WGMMA (Hopper, sm_90)
-operates at warpgroup granularity from shared memory. tcgen05 (Blackwell,
-sm_100+) uses single-thread issue with dedicated Tensor Memory (TMEM).
+Specialized matrix multiply-accumulate hardware units. Warp-scoped MMA
+(`mma.sync`, sm_80+) operates at single-warp granularity from shared-memory
+fragments loaded by `ldmatrix`. WGMMA (Hopper, sm_90) operates at warpgroup
+granularity from shared memory. tcgen05 (Blackwell, sm_100+) uses
+single-thread issue with dedicated Tensor Memory (TMEM).
 
 ## `ThreadIndex<'kernel, IndexSpace>`
 
@@ -189,6 +191,12 @@ errors.
 A group of 32 threads that execute instructions in lockstep on an SM. Warps are
 the smallest scheduling unit. Warp-level operations (shuffle, vote) exchange
 data between lanes in ~1 cycle without shared memory or synchronization barriers.
+
+## Warp MMA
+
+The SM 80+ tensor core path where one warp issues `mma.sync` on fragments loaded
+from shared memory with `ldmatrix`. cuda-oxide exposes the `m16n8k16` f16-input,
+f32-accumulator shape through `cuda_device::mma`.
 
 ## Warpgroup
 

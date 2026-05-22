@@ -188,6 +188,14 @@ roadmap, **N/A** = not applicable or no identified need.
 | TMA Multicast | **Full** | Single TMA load broadcast to all CTAs in cluster. sm_100a for full multicast. |
 | TMA Commit/Wait Groups | **Full** | `cp_async_bulk_commit_group`, `cp_async_bulk_wait_group` for async completion tracking. |
 
+## Runtime Library: Tensor Cores
+
+| Feature | Status | Description |
+|:--------|:-------|:------------|
+| Warp-scoped MMA | **Full** | `cuda_device::mma` exposes `m16n8k16` f16-input/f32-accumulator fragments. A/B fragments load from shared memory through `ldmatrix`, and `mma_m16n8k16_f32_f16` lowers to `mma.sync`. The `warp_mma` example validates repeated K-tile accumulation against a CPU reference on B300 hardware. |
+| WGMMA sync primitives | **Partial** | Hopper warpgroup fence/commit/wait and SMEM descriptor helpers are available; WGMMA MMA shape coverage remains more limited than the shipped warp-scoped `mma` path. |
+| tcgen05 / TMEM | **Full** | Blackwell 5th-gen tensor cores: TMEM allocation/deallocation, MMA issue, SMEM/TMEM movement, stmatrix stores, and CTA-pair variants. |
+
 ---
 
 ## Not Yet Implemented

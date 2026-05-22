@@ -80,6 +80,7 @@ rest of the pipeline through `mem2reg`, lowering to
 | `debug`    | `vprintf`, clock, trap, breakpoint                 | All       |
 | `cluster`  | Thread Block Clusters, DSMEM                       | sm_90+    |
 | `tma`      | Tensor Memory Accelerator bulk copies              | sm_90+    |
+| `mma`      | Warp-scoped `ldmatrix` and `m16n8k16` MMA          | sm_80+    |
 | `wgmma`    | Warpgroup MMA                                      | sm_90     |
 | `tcgen05`  | 5th-gen Tensor Cores, TMEM                         | sm_100+   |
 | `clc`      | Cluster Launch Control                             | sm_100+   |
@@ -122,6 +123,7 @@ The pipeline inspects which intrinsics the code uses and selects a target:
 | tcgen05 / TMEM         | sm_100a   | Blackwell datacenter |
 | WGMMA                  | sm_90a    | Hopper only          |
 | TMA / mbarrier         | sm_100    | Hopper+ compatible   |
+| warp MMA               | sm_80     | Ampere+              |
 | Basic CUDA             | sm_80     | Ampere+ (max compat) |
 
 Override with `CUDA_OXIDE_TARGET=<target>`.

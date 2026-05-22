@@ -277,12 +277,13 @@ The dialect is organized into modules, each targeting a GPU feature set:
 | `cluster`  | Thread Block Clusters + DSMEM                        |  11 | sm_90      | Hopper+    |
 | `mbarrier` | Async barriers + fence proxy + nanosleep             |  10 | sm_90      | Hopper+    |
 | `tma`      | Tensor Memory Accelerator (bulk G2S/S2G)             |  15 | sm_90      | Hopper+    |
+| `mma`      | Warp-scoped `ldmatrix` + `mma.sync`                  |   3 | sm_80      | Ampere+    |
 | `wgmma`    | Warpgroup Matrix Multiply-Accumulate                 |   5 | sm_90      | Hopper+    |
 | `stmatrix` | Shared memory matrix store + bf16 convert            |   5 | sm_90      | Hopper+    |
 | `tcgen05`  | Tensor Core Gen 5 + TMEM                             |  24 | sm_100     | Blackwell+ |
 | `clc`      | Cluster Launch Control                               |   6 | sm_100     | Blackwell+ |
 
-That is 123 operations total. Most users will only encounter the first three
+That is 126 operations total. Most users will only encounter the first three
 modules (thread indexing, warp shuffles, barriers). The rest are for advanced
 GPU programming -- TMA, matrix accelerators, and Blackwell's tensor memory --
 covered in the [Advanced GPU Features](../advanced/tensor-memory-accelerator.md)
@@ -298,6 +299,7 @@ Each NVVM operation maps through three levels of naming:
 | `Barrier0Op`                   | `llvm.nvvm.barrier0`                                  | `bar.sync 0`                           |
 | `ShflSyncBflyI32Op`            | `llvm.nvvm.shfl.sync.bfly.i32`                        | `shfl.sync.bfly.b32`                   |
 | `CpAsyncBulkTensorG2sTile2dOp` | `llvm.nvvm.cp.async.bulk.tensor.2d.tile.g2s.im2col.*` | `cp.async.bulk.tensor.2d.tile.g2s ...` |
+| `MmaSyncM16N8K16F32F16Op`      | inline PTX assembly                                   | `mma.sync.aligned.m16n8k16...`         |
 
 The first column is the Rust struct name in `dialect-nvvm`. The second is what
 `export.rs` emits (after the underscore-to-dot transformation). The third is

@@ -59,24 +59,27 @@ the same stream.
 
 ## Warp-Scoped Matrix Multiply Acceleration
 
-Some important kernels naturally map to warp-scoped matrix multiply execution
-rather than Hopper-style warpgroup execution or Blackwell datacenter tensor
-memory flows. This matters for workloads that target Ampere-class hardware,
-consumer Blackwell parts, or algorithmic shapes that fit warp-level MMA better
-than larger asynchronous accelerator pipelines.
+Status: shipped. Some important kernels naturally map to warp-scoped matrix
+multiply execution rather than Hopper-style warpgroup execution or Blackwell
+datacenter tensor memory flows. This matters for workloads that target
+Ampere-class hardware, consumer Blackwell parts, or algorithmic shapes that fit
+warp-level MMA better than larger asynchronous accelerator pipelines.
 
-The missing functionality is accelerator coverage for kernels that need:
+cuda-oxide now provides accelerator coverage for kernels that need:
 
 - warp-scoped matrix multiply execution,
-- shared-memory tile staging and register-fragment style accumulation,
-- low-precision inputs with wider accumulators,
-- programming models suitable for small or medium tile shapes used inside
-  larger inference kernels,
+- shared-memory tile staging through `ldmatrix`,
+- register-fragment style accumulation through `CuSimd`,
+- f16 inputs with f32 accumulators for `m16n8k16`,
+- repeated warp-level MMA steps for small and medium GEMM tiles,
 - portability across GPU targets where newer warpgroup or datacenter-only
   accelerator models are not the appropriate fit.
 
-The goal is to cover this class of kernels functionally. It does not require
-cuda-oxide to reproduce any one CUDA surface area exactly.
+The `cuda_device::mma` module exposes the shipped low-level surface, and the
+`warp_mma` example stages two K tiles through shared memory, accumulates with
+two `mma.sync` instructions, and validates the 16x8 result tile against a CPU
+reference on B300 hardware. The goal is to cover this class of kernels
+functionally, not to reproduce any one CUDA surface area exactly.
 
 ## Scalable Device-Side Selection and Sorting Primitives
 
