@@ -7,8 +7,8 @@
 //!
 //! This crate intentionally wraps only the cuBLAS surface cuda-oxide uses for
 //! production dense linear algebra integration: handle lifecycle, version
-//! probing, stream and math-mode binding, `Sgemm`, and
-//! `SgemmStridedBatched`.
+//! probing, stream and math-mode binding, `Sgemm`, `SgemmStridedBatched`,
+//! and the mixed-precision `GemmEx` shape needed by DS4.
 //!
 //! # Library discovery
 //!
@@ -53,6 +53,32 @@ pub enum MathMode {
     Default = 0,
     /// Permit TF32 tensor-op execution where cuBLAS supports it.
     Tf32TensorOp = 3,
+}
+
+/// CUDA scalar storage types consumed by `cublasGemmEx`.
+#[repr(C)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum DataType {
+    /// IEEE 754 single precision.
+    F32 = 0,
+    /// IEEE 754 half precision.
+    F16 = 2,
+}
+
+/// cuBLAS accumulation type consumed by `cublasGemmEx`.
+#[repr(C)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum ComputeType {
+    /// Accumulate and scale in single precision.
+    F32 = 68,
+}
+
+/// cuBLAS GEMM algorithm selection.
+#[repr(C)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum GemmAlgo {
+    /// Let cuBLAS select its default algorithm.
+    Default = -1,
 }
 
 /// cuBLAS status values (`cublasStatus_t`).
@@ -160,6 +186,27 @@ pub struct LibCublas {
         c_longlong,
         c_int,
     ) -> CublasStatus,
+    gemm_ex: unsafe extern "C" fn(
+        CublasHandle,
+        Operation,
+        Operation,
+        c_int,
+        c_int,
+        c_int,
+        *const c_void,
+        *const c_void,
+        DataType,
+        c_int,
+        *const c_void,
+        DataType,
+        c_int,
+        *const c_void,
+        *mut c_void,
+        DataType,
+        c_int,
+        ComputeType,
+        GemmAlgo,
+    ) -> CublasStatus,
 }
 
 // SAFETY: The struct holds an owned `libloading::Library` plus immutable
@@ -204,6 +251,7 @@ impl LibCublas {
                 set_math_mode: resolve(&lib, "cublasSetMathMode")?,
                 sgemm: resolve(&lib, "cublasSgemm_v2")?,
                 sgemm_strided_batched: resolve(&lib, "cublasSgemmStridedBatched")?,
+                gemm_ex: resolve(&lib, "cublasGemmEx")?,
                 _lib: lib,
             })
         }
@@ -355,6 +403,56 @@ impl Handle {
             )
         };
         check(status, "cublasSgemmStridedBatched")
+    }
+
+    /// Enqueue mixed-precision `cublasGemmEx` with F16 inputs and F32 output.
+    ///
+    /// # Safety
+    ///
+    /// `a`, `b`, and `c` must be valid device pointers for the matrix shapes,
+    /// strides, and transposition flags passed here. `alpha` and `beta` are
+    /// host `f32` pointers because accumulation and output are F32.
+    #[allow(clippy::too_many_arguments)]
+    pub unsafe fn gemm_ex_f16_f32(
+        &self,
+        transa: Operation,
+        transb: Operation,
+        m: i32,
+        n: i32,
+        k: i32,
+        alpha: *const f32,
+        a: *const c_void,
+        lda: i32,
+        b: *const c_void,
+        ldb: i32,
+        beta: *const f32,
+        c: *mut f32,
+        ldc: i32,
+    ) -> Result<(), CublasError> {
+        let status = unsafe {
+            (self.cublas.gemm_ex)(
+                self.handle,
+                transa,
+                transb,
+                m,
+                n,
+                k,
+                alpha.cast(),
+                a,
+                DataType::F16,
+                lda,
+                b,
+                DataType::F16,
+                ldb,
+                beta.cast(),
+                c.cast(),
+                DataType::F32,
+                ldc,
+                ComputeType::F32,
+                GemmAlgo::Default,
+            )
+        };
+        check(status, "cublasGemmEx")
     }
 }
 

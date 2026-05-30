@@ -3,6 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#![feature(f16)]
+
 use cuda_core::{
     Blas, BlasError, BlasMathMode, CudaContext, CudaStream, DeviceBuffer, SgemmConfig,
     StridedBatchedSgemmConfig,
@@ -20,8 +22,62 @@ fn blas_sgemm_paths_match_cpu_reference_and_validate_inputs()
     blas.set_math_mode(BlasMathMode::Tf32TensorOp)?;
     check_sgemm_matches_cpu_reference(&stream, &blas)?;
     blas.set_math_mode(BlasMathMode::Default)?;
+    check_gemm_ex_f16_f32_matches_cpu_reference(&stream, &blas)?;
     check_strided_batched_sgemm_matches_cpu_reference(&stream, &blas)?;
     check_sgemm_rejects_short_output_buffer(&stream, &blas)?;
+    Ok(())
+}
+
+fn check_gemm_ex_f16_f32_matches_cpu_reference(
+    stream: &CudaStream,
+    blas: &Blas,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let m = 3;
+    let n = 2;
+    let k = 4;
+    let a = [
+        f16::from_bits(0x3c00),
+        f16::from_bits(0x3800),
+        f16::from_bits(0xbc00),
+        f16::from_bits(0x4000),
+        f16::from_bits(0x3400),
+        f16::from_bits(0xc000),
+        f16::from_bits(0x3e00),
+        f16::from_bits(0xb800),
+        f16::from_bits(0x4200),
+        f16::from_bits(0x3c00),
+        f16::from_bits(0x0000),
+        f16::from_bits(0xbc00),
+    ];
+    let b = [
+        f16::from_bits(0x3800),
+        f16::from_bits(0xbc00),
+        f16::from_bits(0x4000),
+        f16::from_bits(0x3400),
+        f16::from_bits(0xb800),
+        f16::from_bits(0x3e00),
+        f16::from_bits(0x3c00),
+        f16::from_bits(0xc000),
+    ];
+    let c_initial = vec![0.25; m * n];
+    let mut expected = c_initial.clone();
+    let a_f32 = a.map(|value| value as f32);
+    let b_f32 = b.map(|value| value as f32);
+    reference_sgemm(m, n, k, 1.0, &a_f32, &b_f32, 0.0, &mut expected);
+
+    let a_dev = DeviceBuffer::from_host(stream, &a)?;
+    let b_dev = DeviceBuffer::from_host(stream, &b)?;
+    let mut c_dev = DeviceBuffer::from_host(stream, &c_initial)?;
+
+    blas.gemm_ex_f16_f32(
+        stream,
+        SgemmConfig::new(m, n, k),
+        &a_dev,
+        &b_dev,
+        &mut c_dev,
+    )?;
+    let actual = c_dev.to_host_vec(stream)?;
+    assert_close(&actual, &expected);
     Ok(())
 }
 

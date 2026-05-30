@@ -266,6 +266,41 @@ impl Blas {
         Ok(())
     }
 
+    /// Enqueue row-major mixed-precision GEMM with F16 inputs and F32 output.
+    pub fn gemm_ex_f16_f32(
+        &self,
+        stream: &CudaStream,
+        config: SgemmConfig,
+        a: &DeviceBuffer<f16>,
+        b: &DeviceBuffer<f16>,
+        c: &mut DeviceBuffer<f32>,
+    ) -> Result<(), BlasError> {
+        ensure_same_context(&self.ctx, a.context(), "a buffer")?;
+        let dims = validate_gemm_ex_f16_f32(config, a, b, c)?;
+        self.bind_stream(stream)?;
+
+        // Row-major C(m,n)=A(m,k)*B(k,n) is column-major
+        // C^T(n,m)=B^T(n,k)*A^T(k,m).
+        unsafe {
+            self.handle.gemm_ex_f16_f32(
+                cublas_sys::Operation::None,
+                cublas_sys::Operation::None,
+                dims.n,
+                dims.m,
+                dims.k,
+                &config.alpha,
+                b.cu_deviceptr() as *const c_void,
+                dims.n,
+                a.cu_deviceptr() as *const c_void,
+                dims.k,
+                &config.beta,
+                c.cu_deviceptr() as *mut f32,
+                dims.n,
+            )?;
+        }
+        Ok(())
+    }
+
     /// Enqueue row-major strided-batched SGEMM on `stream`.
     pub fn sgemm_strided_batched(
         &self,
@@ -338,7 +373,26 @@ fn validate_sgemm(
 ) -> Result<SgemmDims, BlasError> {
     ensure_same_context(a.context(), b.context(), "b buffer")?;
     ensure_same_context(a.context(), c.context(), "c buffer")?;
+    validate_gemm_lengths(config, a.len(), b.len(), c.len())
+}
 
+fn validate_gemm_ex_f16_f32(
+    config: SgemmConfig,
+    a: &DeviceBuffer<f16>,
+    b: &DeviceBuffer<f16>,
+    c: &DeviceBuffer<f32>,
+) -> Result<SgemmDims, BlasError> {
+    ensure_same_context(a.context(), b.context(), "b buffer")?;
+    ensure_same_context(a.context(), c.context(), "c buffer")?;
+    validate_gemm_lengths(config, a.len(), b.len(), c.len())
+}
+
+fn validate_gemm_lengths(
+    config: SgemmConfig,
+    a_len: usize,
+    b_len: usize,
+    c_len: usize,
+) -> Result<SgemmDims, BlasError> {
     let m = to_nonzero_i32("m", config.m)?;
     let n = to_nonzero_i32("n", config.n)?;
     let k = to_nonzero_i32("k", config.k)?;
@@ -346,9 +400,9 @@ fn validate_sgemm(
     let a_required = checked_mul("a matrix elements", config.m, config.k)?;
     let b_required = checked_mul("b matrix elements", config.k, config.n)?;
     let c_required = checked_mul("c matrix elements", config.m, config.n)?;
-    ensure_len("a", a.len(), a_required)?;
-    ensure_len("b", b.len(), b_required)?;
-    ensure_len("c", c.len(), c_required)?;
+    ensure_len("a", a_len, a_required)?;
+    ensure_len("b", b_len, b_required)?;
+    ensure_len("c", c_len, c_required)?;
 
     Ok(SgemmDims { m, n, k })
 }
