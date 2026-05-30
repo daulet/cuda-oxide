@@ -257,6 +257,36 @@ impl CudaContext {
         }
     }
 
+    /// Returns whether the device can coherently access system pageable memory.
+    pub fn pageable_memory_access(&self) -> Result<bool, DriverError> {
+        self.bind_to_thread()?;
+        let mut supported = MaybeUninit::uninit();
+        unsafe {
+            cuda_bindings::cuDeviceGetAttribute(
+                supported.as_mut_ptr(),
+                cuda_bindings::CUdevice_attribute_enum_CU_DEVICE_ATTRIBUTE_PAGEABLE_MEMORY_ACCESS,
+                self.cu_device,
+            )
+            .result()?;
+            Ok(supported.assume_init() != 0)
+        }
+    }
+
+    /// Returns whether pageable device access resolves through host page tables.
+    pub fn pageable_memory_access_uses_host_page_tables(&self) -> Result<bool, DriverError> {
+        self.bind_to_thread()?;
+        let mut uses_host_page_tables = MaybeUninit::uninit();
+        unsafe {
+            cuda_bindings::cuDeviceGetAttribute(
+                uses_host_page_tables.as_mut_ptr(),
+                cuda_bindings::CUdevice_attribute_enum_CU_DEVICE_ATTRIBUTE_PAGEABLE_MEMORY_ACCESS_USES_HOST_PAGE_TABLES,
+                self.cu_device,
+            )
+            .result()?;
+            Ok(uses_host_page_tables.assume_init() != 0)
+        }
+    }
+
     /// Atomically reads and clears the sticky error state.
     ///
     /// Returns `Ok(())` if no error was recorded, or the stored

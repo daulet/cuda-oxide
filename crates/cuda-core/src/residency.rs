@@ -1046,6 +1046,165 @@ impl<T: DeviceCopy> Deref for ReadOnlyRegisteredHostMemory<'_, T> {
     }
 }
 
+/// Borrowed immutable system-pageable memory exposed through CUDA HMM access.
+///
+/// This handle does not allocate, register, or free the backing slice. It
+/// keeps the shared host borrow alive while CUDA advice, prefetch, or
+/// read-only device work may reference its virtual address. Devices without
+/// pageable-memory access report `CUDA_ERROR_NOT_SUPPORTED` from [`Self::new`].
+///
+/// Drop does not synchronize. All GPU work that may read this range must
+/// complete before the handle and its backing slice are dropped.
+pub struct ReadOnlyPageableHostMemory<'a, T: DeviceCopy> {
+    ptr: NonNull<T>,
+    device_ptr: CUdeviceptr,
+    len: usize,
+    num_bytes: usize,
+    ctx: Arc<CudaContext>,
+    _borrow: PhantomData<&'a [T]>,
+}
+
+// SAFETY: moving the handle transfers an immutable borrow across threads,
+// which is safe only when the borrowed elements may be shared across threads.
+unsafe impl<T: DeviceCopy + Sync> Send for ReadOnlyPageableHostMemory<'_, T> {}
+// SAFETY: shared host access exposes only `&[T]`.
+unsafe impl<T: DeviceCopy + Sync> Sync for ReadOnlyPageableHostMemory<'_, T> {}
+
+impl<'a, T: DeviceCopy> ReadOnlyPageableHostMemory<'a, T> {
+    /// Borrows `data` for pageable device access on `ctx`.
+    pub fn new(ctx: &Arc<CudaContext>, data: &'a [T]) -> Result<Self, DriverError> {
+        let num_bytes = allocation_size::<T>(data.len())?;
+        let (ptr, device_ptr) = if num_bytes == 0 {
+            (NonNull::dangling(), 0)
+        } else {
+            if !ctx.pageable_memory_access()? {
+                return Err(not_supported());
+            }
+            let ptr = NonNull::new(data.as_ptr().cast_mut()).ok_or_else(invalid_value)?;
+            (ptr, ptr.as_ptr() as usize as CUdeviceptr)
+        };
+        Ok(Self {
+            ptr,
+            device_ptr,
+            len: data.len(),
+            num_bytes,
+            ctx: ctx.clone(),
+            _borrow: PhantomData,
+        })
+    }
+
+    /// Number of elements in the pageable range.
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    /// Returns `true` if the pageable range is empty.
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    /// Total pageable size in bytes (`len * size_of::<T>()`).
+    #[inline]
+    pub fn num_bytes(&self) -> usize {
+        self.num_bytes
+    }
+
+    /// Returns the CUDA context governing advice and prefetch operations.
+    #[inline]
+    pub fn context(&self) -> &Arc<CudaContext> {
+        &self.ctx
+    }
+
+    /// Returns the UVA pointer that device work may read.
+    ///
+    /// Empty and zero-sized ranges return `0`.
+    #[inline]
+    pub fn cu_deviceptr(&self) -> CUdeviceptr {
+        self.device_ptr
+    }
+
+    /// Returns the original host pointer.
+    #[inline]
+    pub fn as_ptr(&self) -> *const T {
+        self.ptr.as_ptr()
+    }
+
+    /// Returns the borrowed host slice.
+    #[inline]
+    pub fn as_slice(&self) -> &[T] {
+        unsafe { slice::from_raw_parts(self.ptr.as_ptr(), self.len) }
+    }
+
+    /// Applies Unified Memory advice to this system-pageable range.
+    pub fn advise(&self, advice: MemoryAdvice) -> Result<(), DriverError> {
+        if self.num_bytes == 0 {
+            return Ok(());
+        }
+        self.ctx.bind_to_thread()?;
+        let (advice, location) = advice.raw();
+        unsafe {
+            crate::memory::mem_advise(
+                self.device_ptr,
+                self.num_bytes,
+                advice,
+                location.cu_location(),
+            )
+        }
+    }
+
+    /// Enqueues prefetch of this system-pageable range to `location`.
+    pub fn prefetch_to(
+        &self,
+        stream: &CudaStream,
+        location: MemoryLocation,
+    ) -> Result<(), DriverError> {
+        debug_assert!(
+            Arc::ptr_eq(&self.ctx, stream.context()),
+            "pageable host range and stream must belong to the same CUDA context"
+        );
+        if self.num_bytes == 0 {
+            return Ok(());
+        }
+        stream.context().bind_to_thread()?;
+        unsafe {
+            crate::memory::mem_prefetch_async(
+                self.device_ptr,
+                self.num_bytes,
+                location.cu_location(),
+                stream.cu_stream(),
+            )
+        }
+    }
+}
+
+impl<T: DeviceCopy> fmt::Debug for ReadOnlyPageableHostMemory<'_, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ReadOnlyPageableHostMemory")
+            .field("ptr", &self.ptr)
+            .field("device_ptr", &self.device_ptr)
+            .field("len", &self.len)
+            .field("num_bytes", &self.num_bytes)
+            .field("ctx", &self.ctx)
+            .finish()
+    }
+}
+
+impl<T: DeviceCopy> AsRef<[T]> for ReadOnlyPageableHostMemory<'_, T> {
+    fn as_ref(&self) -> &[T] {
+        self.as_slice()
+    }
+}
+
+impl<T: DeviceCopy> Deref for ReadOnlyPageableHostMemory<'_, T> {
+    type Target = [T];
+
+    fn deref(&self) -> &Self::Target {
+        self.as_slice()
+    }
+}
+
 fn allocation_size<T>(len: usize) -> Result<usize, DriverError> {
     len.checked_mul(std::mem::size_of::<T>())
         .ok_or_else(invalid_value)
@@ -1053,4 +1212,8 @@ fn allocation_size<T>(len: usize) -> Result<usize, DriverError> {
 
 fn invalid_value() -> DriverError {
     DriverError(cuda_bindings::cudaError_enum_CUDA_ERROR_INVALID_VALUE)
+}
+
+fn not_supported() -> DriverError {
+    DriverError(cuda_bindings::cudaError_enum_CUDA_ERROR_NOT_SUPPORTED)
 }

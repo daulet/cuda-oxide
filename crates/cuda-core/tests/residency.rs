@@ -6,8 +6,8 @@
 use cuda_core::sys;
 use cuda_core::{
     CudaContext, ManagedBuffer, MappedHostBuffer, MemoryAdvice, MemoryLocation,
-    ReadOnlyRegisteredHostMemory, RegisteredHostMemory, ResidencyBuffer, ResidencyStrategy,
-    StreamAttachment,
+    ReadOnlyPageableHostMemory, ReadOnlyRegisteredHostMemory, RegisteredHostMemory,
+    ResidencyBuffer, ResidencyStrategy, StreamAttachment,
 };
 
 #[test]
@@ -172,6 +172,47 @@ fn read_only_registered_host_memory_maps_or_reports_unsupported() {
 }
 
 #[test]
+fn read_only_pageable_host_memory_prefetches_when_supported() {
+    const PAGE_BYTES: usize = 4096;
+
+    let ctx = CudaContext::new(0).expect("failed to create CUDA context");
+    let stream = ctx.new_stream().expect("failed to create CUDA stream");
+    let data = vec![41_u8; PAGE_BYTES * 2];
+    let page_delta = (PAGE_BYTES - (data.as_ptr() as usize % PAGE_BYTES)) % PAGE_BYTES;
+    let page = &data[page_delta..page_delta + PAGE_BYTES];
+
+    match ReadOnlyPageableHostMemory::new(&ctx, page) {
+        Ok(pageable) => {
+            let device = MemoryLocation::Device(ctx.cu_device());
+            eprintln!(
+                "read-only pageable host memory: supported host_page_tables={}",
+                ctx.pageable_memory_access_uses_host_page_tables()
+                    .expect("failed to query host page-table access")
+            );
+            pageable
+                .advise(MemoryAdvice::SetReadMostly)
+                .expect("failed to set read-mostly advice for pageable host memory");
+            pageable
+                .advise(MemoryAdvice::SetPreferredLocation(device))
+                .expect("failed to set preferred location for pageable host memory");
+            pageable
+                .prefetch_to(&stream, device)
+                .expect("failed to prefetch pageable host memory");
+            stream.synchronize().expect("failed to synchronize stream");
+            assert_eq!(pageable.len(), PAGE_BYTES);
+            assert_eq!(pageable.num_bytes(), PAGE_BYTES);
+            assert_ne!(pageable.cu_deviceptr(), 0);
+            assert_eq!(pageable.as_slice(), page);
+            assert!(format!("{pageable:?}").contains("ReadOnlyPageableHostMemory"));
+        }
+        Err(err) => {
+            eprintln!("read-only pageable host memory: {err:?}");
+            assert_eq!(err.0, sys::cudaError_enum_CUDA_ERROR_NOT_SUPPORTED);
+        }
+    }
+}
+
+#[test]
 fn residency_handles_support_empty_allocations() {
     let ctx = CudaContext::new(0).expect("failed to create CUDA context");
     let mut data: [u32; 0] = [];
@@ -185,6 +226,8 @@ fn residency_handles_support_empty_allocations() {
         RegisteredHostMemory::new(&ctx, &mut data).expect("failed to register empty slice");
     let read_only_registered = ReadOnlyRegisteredHostMemory::new(&ctx, &read_only_data)
         .expect("failed to register empty read-only slice");
+    let read_only_pageable = ReadOnlyPageableHostMemory::new(&ctx, &read_only_data)
+        .expect("failed to borrow empty read-only pageable slice");
 
     assert!(managed.is_empty());
     assert_eq!(managed.num_bytes(), 0);
@@ -205,6 +248,11 @@ fn residency_handles_support_empty_allocations() {
     assert_eq!(read_only_registered.num_bytes(), 0);
     assert_eq!(read_only_registered.cu_deviceptr(), 0);
     assert_eq!(read_only_registered.as_slice(), &[]);
+
+    assert!(read_only_pageable.is_empty());
+    assert_eq!(read_only_pageable.num_bytes(), 0);
+    assert_eq!(read_only_pageable.cu_deviceptr(), 0);
+    assert_eq!(read_only_pageable.as_slice(), &[]);
 }
 
 #[test]
@@ -221,6 +269,8 @@ fn residency_handles_support_zero_sized_types() {
         RegisteredHostMemory::new(&ctx, &mut data).expect("failed to register zst slice");
     let read_only_registered = ReadOnlyRegisteredHostMemory::new(&ctx, &read_only_data)
         .expect("failed to register read-only zst slice");
+    let read_only_pageable = ReadOnlyPageableHostMemory::new(&ctx, &read_only_data)
+        .expect("failed to borrow read-only pageable zst slice");
 
     assert_eq!(managed.len(), 8);
     assert_eq!(managed.num_bytes(), 0);
@@ -237,6 +287,10 @@ fn residency_handles_support_zero_sized_types() {
     assert_eq!(read_only_registered.len(), 8);
     assert_eq!(read_only_registered.num_bytes(), 0);
     assert_eq!(read_only_registered.as_slice(), &[(); 8]);
+
+    assert_eq!(read_only_pageable.len(), 8);
+    assert_eq!(read_only_pageable.num_bytes(), 0);
+    assert_eq!(read_only_pageable.as_slice(), &[(); 8]);
 }
 
 #[test]

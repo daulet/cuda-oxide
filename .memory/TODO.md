@@ -139,6 +139,43 @@
      - Claude CLI non-interactive review: unavailable; `claude --bare -p`
        exited with `Not logged in`.
 
+### DS4 Pageable Host HMM Mapping Extension
+
+- Status: complete
+- Goal: expose the CUDA pageable-memory access contract needed by DS4's
+  read-only mmap prefetch branch without requiring applications to construct
+  raw managed-memory locations or pass untracked host pointers to driver calls.
+- Source surface: `crates/cuda-core` context capabilities, residency handles,
+  tests, and public crate documentation.
+- Required evidence:
+  - a context query for pageable-memory device access capability,
+  - a borrowed immutable pageable-host handle with advice and prefetch
+    methods tied to the source lifetime,
+  - B300 runtime verification of read-mostly advice and device prefetch on a
+    page-aligned system allocation,
+  - no DS4-specific policy or implicit fallback inside `cuda-core`.
+
+#### Planned milestones
+
+1. Read-only pageable host memory handle
+   - Status: complete
+   - End-state: `cuda-core` can safely express DS4's pageable HMM read path
+     while returning `CUDA_ERROR_NOT_SUPPORTED` on devices lacking the
+     required access capability.
+   - Validation:
+     - local `cargo fmt --all -- --check` and `git diff --check`: passed.
+     - B300 `cargo +nightly-2026-04-03 test -p cuda-core --test residency
+       -- --nocapture`: passed (12 tests); live output reported pageable access
+       with `host_page_tables=false` and successful advice/prefetch while the
+       read-only registered mapping still returned driver error `801`.
+     - B300 `cargo +nightly-2026-04-03 test -p cuda-core -- --nocapture`:
+       passed for the full touched crate suite.
+     - Self-review: the safe API retains only an immutable host borrow and
+       exposes advice/prefetch; device pointer use for GPU work remains within
+       the existing unsafe CUDA call boundary.
+     - Claude CLI non-interactive review: unavailable; `claude --bare -p`
+       exited with `Not logged in`.
+
 ### 2. Production Dense Linear Algebra Integration
 
 - Status: complete
