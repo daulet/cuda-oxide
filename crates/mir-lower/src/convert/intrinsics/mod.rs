@@ -77,6 +77,7 @@ pub mod clc;
 pub mod cluster;
 pub mod common;
 pub mod debug;
+pub mod integer;
 pub mod mbarrier;
 pub mod mma;
 pub mod stmatrix;

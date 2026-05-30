@@ -21,6 +21,7 @@ pub mod debug;
 pub mod disjoint;
 pub mod fence;
 pub mod grid;
+pub mod integer;
 pub mod lowp {
     pub use cuda_lowp::*;
 }

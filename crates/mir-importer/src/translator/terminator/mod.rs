@@ -2423,6 +2423,22 @@ fn try_dispatch_intrinsic(
         )?)),
 
         // =================================================================
+        // Packed Integer Arithmetic (from intrinsics::integer)
+        // =================================================================
+        "cuda_device::integer::dp4a_i8" => Ok(Some(intrinsics::integer::emit_dp4a_i8(
+            ctx,
+            body,
+            args,
+            destination,
+            target,
+            block_ptr,
+            prev_op,
+            value_map,
+            block_map,
+            loc,
+        )?)),
+
+        // =================================================================
         // Warp-scoped MMA (from intrinsics::mma)
         // =================================================================
         "cuda_device::mma::load_a_m16n8k16" => Ok(Some(intrinsics::mma::emit_load_a_m16n8k16(

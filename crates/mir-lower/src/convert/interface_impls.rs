@@ -42,9 +42,9 @@ use dialect_nvvm::ops::{
     CpAsyncBulkTensorG2sTile3dOp, CpAsyncBulkTensorG2sTile4dOp, CpAsyncBulkTensorG2sTile5dOp,
     CpAsyncBulkTensorS2gTile1dOp, CpAsyncBulkTensorS2gTile2dOp, CpAsyncBulkTensorS2gTile3dOp,
     CpAsyncBulkTensorS2gTile4dOp, CpAsyncBulkTensorS2gTile5dOp, CpAsyncBulkWaitGroupOp,
-    CpAsyncBulkWaitGroupReadOp, CvtF32x2Bf16x2Op, DsmemReadU32Op, FenceProxyAsyncSharedCtaOp,
-    MapaSharedClusterOp, MatchAllSyncI32Op, MatchAllSyncI64Op, MatchAnySyncI32Op,
-    MatchAnySyncI64Op, MbarrierArriveClusterOp, MbarrierArriveExpectTxSharedOp,
+    CpAsyncBulkWaitGroupReadOp, CvtF32x2Bf16x2Op, Dp4aSignedSignedOp, DsmemReadU32Op,
+    FenceProxyAsyncSharedCtaOp, MapaSharedClusterOp, MatchAllSyncI32Op, MatchAllSyncI64Op,
+    MatchAnySyncI32Op, MatchAnySyncI64Op, MbarrierArriveClusterOp, MbarrierArriveExpectTxSharedOp,
     MbarrierArriveSharedOp, MbarrierInitSharedOp, MbarrierInvalSharedOp, MbarrierTestWaitSharedOp,
     MbarrierTryWaitParitySharedOp, MbarrierTryWaitSharedOp, MmaLdMatrixM8N8X2TransOp,
     MmaLdMatrixM8N8X4Op, MmaSyncM16N8K16F32F16Op, NanosleepOp, NvvmAtomicCmpxchgOp,
@@ -1428,6 +1428,25 @@ impl MirToLlvmConversion for DsmemReadU32Op {
         operands_info: &OperandsInfo,
     ) -> Result<()> {
         super::intrinsics::cluster::convert_dsmem_read_u32(
+            ctx,
+            rewriter,
+            self.get_operation(),
+            operands_info,
+        )
+    }
+}
+
+// ---- NVVM Packed integer ops -----------------------------------------------
+
+#[op_interface_impl]
+impl MirToLlvmConversion for Dp4aSignedSignedOp {
+    fn convert(
+        &self,
+        ctx: &mut Context,
+        rewriter: &mut DialectConversionRewriter,
+        operands_info: &OperandsInfo,
+    ) -> Result<()> {
+        super::intrinsics::integer::convert_dp4a_i8(
             ctx,
             rewriter,
             self.get_operation(),
