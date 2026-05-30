@@ -195,8 +195,7 @@ fn read_only_pageable_host_memory_prefetches_when_supported() {
             pageable
                 .advise(MemoryAdvice::SetPreferredLocation(device))
                 .expect("failed to set preferred location for pageable host memory");
-            pageable
-                .prefetch_to(&stream, device)
+            unsafe { pageable.prefetch_to(&stream, device) }
                 .expect("failed to prefetch pageable host memory");
             stream.synchronize().expect("failed to synchronize stream");
             assert_eq!(pageable.len(), PAGE_BYTES);

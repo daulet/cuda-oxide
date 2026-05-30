@@ -1155,7 +1155,12 @@ impl<'a, T: DeviceCopy> ReadOnlyPageableHostMemory<'a, T> {
     }
 
     /// Enqueues prefetch of this system-pageable range to `location`.
-    pub fn prefetch_to(
+    ///
+    /// # Safety
+    ///
+    /// The handle and its backing slice must remain alive and immutable until
+    /// all work on `stream` that may reference this range has completed.
+    pub unsafe fn prefetch_to(
         &self,
         stream: &CudaStream,
         location: MemoryLocation,

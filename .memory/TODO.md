@@ -171,8 +171,13 @@
      - B300 `cargo +nightly-2026-04-03 test -p cuda-core -- --nocapture`:
        passed for the full touched crate suite.
      - Self-review: the safe API retains only an immutable host borrow and
-       exposes advice/prefetch; device pointer use for GPU work remains within
+       exposes synchronous advice; asynchronous prefetch was corrected to an
+       `unsafe` method requiring the immutable backing range to live through
+       stream completion, and device pointer use for GPU work remains within
        the existing unsafe CUDA call boundary.
+     - Post-push DS4 integration review found the asynchronous-borrow API
+       defect above before DS4 pinned the new handle; the corrected focused
+       and full B300 `cuda-core` suites passed again.
      - Claude CLI non-interactive review: unavailable; `claude --bare -p`
        exited with `Not logged in`.
 
