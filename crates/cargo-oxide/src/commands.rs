@@ -107,15 +107,14 @@ pub fn codegen_run(
 
     let output_format = format_label(emit_nvvm_ir);
     // Target precedence for `cargo oxide run` (highest first):
-    //   1. --arch <sm_XX>           explicit user override
+    //   1. --arch <sm_XX>             explicit user override
     //   2. CUDA_OXIDE_TARGET=<sm_XX>  explicit env override (set by parent process)
-    //   3. Host GPU compute capability detected from CUDA device 0
-    //   4. Backend feature-based default (`select_target` in mir-importer)
+    //   3. Host GPU target below sm_80, detected from CUDA device 0
+    //   4. Backend feature-based portable target (`select_target` in mir-importer)
     //
-    // (3) is the auto-detect added here so the generated module can load on
-    // the local GPU. We only do it for `run`, not `build`/`pipeline`, because
-    // `run` immediately loads the cubin on device 0 — whereas the other
-    // commands may be cross-compiling for a different machine.
+    // (3) only lowers the basic portable baseline for older GPUs. Elevating
+    // the backend target to the exact local capability can require a newer
+    // PTX ISA than the selected llc emits (for example sm_103 on B300).
     let detected_run_arch = detect_run_target_arch(arch, emit_nvvm_ir);
     let forwarded_arch = arch.or(detected_run_arch.as_deref());
 
@@ -131,10 +130,10 @@ pub fn codegen_run(
         );
         println!();
     } else if detected_run_arch.is_some() {
-        // Surface the auto-detect outcome so it isn't silent magic; users
-        // chasing a JIT/load failure can see exactly which arch was picked.
+        // Surface the lowered outcome so users can distinguish it from the
+        // backend-selected portable target.
         println!(
-            "Target arch: {} (auto-detected from CUDA device 0)",
+            "Target arch: {} (lowered for CUDA device 0)",
             detected_run_arch.as_deref().unwrap()
         );
         println!();
@@ -851,8 +850,8 @@ fn apply_output_mode(cmd: &mut Command, emit_nvvm_ir: bool, arch: Option<&str>) 
     }
 }
 
-/// Pick a runnable target for `cargo oxide run` when the user has not pinned
-/// one explicitly.
+/// Lower the basic portable target for `cargo oxide run` when the user has
+/// not pinned one explicitly and the execution GPU predates `sm_80`.
 ///
 /// # Precedence
 ///
@@ -862,29 +861,29 @@ fn apply_output_mode(cmd: &mut Command, emit_nvvm_ir: bool, arch: Option<&str>) 
 /// 1. `--arch <sm_XX>`            — explicit user override
 /// 2. `CUDA_OXIDE_TARGET=<sm_XX>` — explicit env override (set in the parent
 ///    process before invoking `cargo oxide run`)
-/// 3. **This function** — host GPU compute capability of CUDA device 0
-/// 4. Backend feature-based default (`select_target` in
+/// 3. **This function** — host GPU compute capability below `sm_80`
+/// 4. Backend feature-based portable target (`select_target` in
 ///    `mir-importer::pipeline`), which picks the minimum `sm_XX` required by
 ///    the IR shape (e.g. `Basic → sm_80`, `Cluster → sm_90`, `Tma → sm_100`)
 ///
-/// This function returns `Some(sm_XY)` to fill slot 3, or `None` (falling
-/// through to slot 4) when the host has no usable GPU.
+/// This function returns `Some(sm_XY)` only when the GPU is older than the
+/// backend's basic `sm_80` baseline, or `None` (falling through to slot 4).
 ///
 /// # Why only `run`
 ///
 /// `run` immediately loads the generated module on device 0 and launches the
-/// kernel, so a target older than the local GPU's compute capability is the
-/// only safe default. `build` and `pipeline` may legitimately cross-compile
-/// to a different machine, so they keep the backend's feature-based default
-/// untouched.
+/// kernel. A basic `sm_80` module cannot load on a Turing (`sm_75`) GPU, so
+/// this path lowers that baseline when needed. Newer GPUs consume the
+/// backend-selected portable PTX without forcing an architecture-specific
+/// PTX requirement.
 ///
 /// # Why this is needed even with the backend default
 ///
-/// The backend's `select_target` picks the minimum `sm_XX` the IR requires.
-/// `Basic → sm_80` is a fine *compilation* baseline, but PTX for `sm_80` will
-/// not load on a Turing (`sm_75`) GPU because the JIT refuses
-/// forward-incompatible PTX. Detecting the host CC in `run` keeps the
-/// generated module loadable on the actual hardware that will execute it.
+/// The backend's `select_target` picks the minimum compatible `sm_XX` the IR
+/// requires. Raising `Basic → sm_80` to a newer device's exact capability is
+/// incorrect: a B300 reports `sm_103`, but an llc that emits PTX 6.0 cannot
+/// form valid `sm_103` PTX. Lowering only for older devices retains forward
+/// compatibility and leaves advanced feature selection to the backend.
 ///
 /// # When this returns `None`
 ///
@@ -893,8 +892,8 @@ fn apply_output_mode(cmd: &mut Command, emit_nvvm_ir: bool, arch: Option<&str>) 
 /// - `--emit-nvvm-ir` is in effect (NVVM IR mode requires explicit `--arch`,
 ///   enforced by the CLI parser).
 /// - No CUDA driver / device 0 is available on the host (CI runners without
-///   GPUs, headless build boxes). The caller falls through to slot 4 and
-///   the backend's feature-based default applies.
+///   GPUs, headless build boxes).
+/// - Device 0 is `sm_80` or newer, so the backend's portable target applies.
 fn detect_run_target_arch(arch: Option<&str>, emit_nvvm_ir: bool) -> Option<String> {
     if arch.is_some() || emit_nvvm_ir || std::env::var_os("CUDA_OXIDE_TARGET").is_some() {
         return None;
@@ -903,7 +902,11 @@ fn detect_run_target_arch(arch: Option<&str>, emit_nvvm_ir: bool) -> Option<Stri
     cuda_core::CudaContext::new(0)
         .and_then(|ctx| ctx.compute_capability())
         .ok()
-        .map(format_sm_arch)
+        .and_then(run_target_override_for_capability)
+}
+
+fn run_target_override_for_capability(capability: (i32, i32)) -> Option<String> {
+    (capability < (8, 0)).then(|| format_sm_arch(capability))
 }
 
 /// Format a `(major, minor)` compute-capability tuple as the `sm_XX` /
@@ -1330,6 +1333,17 @@ mod tests {
         // compute_capability() returns plain integers; the `a` suffix is
         // applied by the backend's feature selector when arch-specific
         // tcgen05 / wgmma intrinsics are used.
+    }
+
+    #[test]
+    fn run_target_override_only_lowers_pre_ampere_gpus() {
+        assert_eq!(
+            run_target_override_for_capability((7, 5)).as_deref(),
+            Some("sm_75")
+        );
+        assert_eq!(run_target_override_for_capability((8, 0)), None);
+        assert_eq!(run_target_override_for_capability((10, 3)), None);
+        assert_eq!(run_target_override_for_capability((12, 0)), None);
     }
 
     #[test]
