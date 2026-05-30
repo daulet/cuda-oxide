@@ -15,7 +15,7 @@ use pliron_derive::pliron_op;
 
 /// Four-way signed i8 dot product with signed i32 accumulation.
 ///
-/// Corresponds to `llvm.nvvm.idp4a.s.s` / PTX `dp4a.s32.s32`.
+/// Corresponds to PTX `dp4a.s32.s32`.
 #[pliron_op(
     name = "nvvm.idp4a_s_s",
     format,

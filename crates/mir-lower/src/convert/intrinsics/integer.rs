@@ -4,9 +4,11 @@
  */
 
 //! Packed integer arithmetic intrinsic conversion.
+//!
+//! LLVM 18, used by the current CUDA build path, does not lower an NVVM DP4A
+//! intrinsic. Emit PTX directly so the instruction remains usable there.
 
-use crate::convert::intrinsics::common::call_intrinsic;
-use dialect_llvm::types as llvm_types;
+use crate::convert::intrinsics::common::inline_asm_convergent;
 use pliron::builtin::types::{IntegerType, Signedness};
 use pliron::context::{Context, Ptr};
 use pliron::irbuild::dialect_conversion::{DialectConversionRewriter, OperandsInfo};
@@ -25,13 +27,14 @@ pub(crate) fn convert_dp4a_i8(
     if operands.len() != 3 {
         return pliron::input_err_noloc!("dp4a requires 3 operands [a, b, acc]");
     }
-    let func_ty = llvm_types::FuncType::get(
+    let asm_op = inline_asm_convergent(
         ctx,
+        rewriter,
         i32_ty.into(),
-        vec![i32_ty.into(), i32_ty.into(), i32_ty.into()],
-        false,
+        operands,
+        "dp4a.s32.s32 $0, $1, $2, $3;",
+        "=r,r,r,r",
     );
-    let call_op = call_intrinsic(ctx, rewriter, op, "llvm_nvvm_idp4a_s_s", func_ty, operands)?;
-    rewriter.replace_operation(ctx, op, call_op);
+    rewriter.replace_operation(ctx, op, asm_op);
     Ok(())
 }

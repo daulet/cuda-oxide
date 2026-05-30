@@ -7,7 +7,7 @@
 
 /// Compute four signed i8 products packed in each i32 operand and add `acc`.
 ///
-/// Lowers to `llvm.nvvm.idp4a.s.s` / PTX `dp4a.s32.s32`.
+/// Lowers to PTX `dp4a.s32.s32`.
 #[inline(never)]
 pub fn dp4a_i8(a: i32, b: i32, acc: i32) -> i32 {
     let _ = (a, b, acc);
