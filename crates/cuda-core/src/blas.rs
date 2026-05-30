@@ -19,6 +19,24 @@ use crate::device_buffer::DeviceBuffer;
 use crate::error::DriverError;
 use crate::stream::CudaStream;
 
+/// cuBLAS floating-point execution mode used by [`Blas`].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BlasMathMode {
+    /// Use standard cuBLAS math behavior.
+    Default,
+    /// Permit TF32 tensor-op acceleration where cuBLAS supports it.
+    Tf32TensorOp,
+}
+
+impl From<BlasMathMode> for cublas_sys::MathMode {
+    fn from(mode: BlasMathMode) -> Self {
+        match mode {
+            BlasMathMode::Default => Self::Default,
+            BlasMathMode::Tf32TensorOp => Self::Tf32TensorOp,
+        }
+    }
+}
+
 /// Row-major SGEMM configuration.
 ///
 /// Computes `C = alpha * A * B + beta * C` where:
@@ -205,6 +223,12 @@ impl Blas {
     /// Query the cuBLAS version backing this handle.
     pub fn version(&self) -> Result<i32, BlasError> {
         Ok(self.handle.version()?)
+    }
+
+    /// Set the cuBLAS floating-point math policy for subsequent operations.
+    pub fn set_math_mode(&self, mode: BlasMathMode) -> Result<(), BlasError> {
+        self.ctx.bind_to_thread()?;
+        Ok(self.handle.set_math_mode(mode.into())?)
     }
 
     /// Enqueue row-major SGEMM on `stream`.

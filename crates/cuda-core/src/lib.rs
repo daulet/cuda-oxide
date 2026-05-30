@@ -71,7 +71,7 @@ pub mod stream;
 /// CUDA Virtual Memory Management (VMM) for physical alloc, VA reservation, and mapping.
 pub mod vmm;
 
-pub use blas::{Blas, BlasError, SgemmConfig, StridedBatchedSgemmConfig};
+pub use blas::{Blas, BlasError, BlasMathMode, SgemmConfig, StridedBatchedSgemmConfig};
 pub use context::{CudaContext, DeviceMemoryInfo};
 /// Raw CUDA driver bindings re-exported for direct access when needed.
 pub use cuda_bindings as sys;

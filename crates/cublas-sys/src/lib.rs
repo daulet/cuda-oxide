@@ -7,7 +7,8 @@
 //!
 //! This crate intentionally wraps only the cuBLAS surface cuda-oxide uses for
 //! production dense linear algebra integration: handle lifecycle, version
-//! probing, stream binding, `Sgemm`, and `SgemmStridedBatched`.
+//! probing, stream and math-mode binding, `Sgemm`, and
+//! `SgemmStridedBatched`.
 //!
 //! # Library discovery
 //!
@@ -42,6 +43,16 @@ pub enum Operation {
     Transpose = 1,
     /// Conjugate transpose. Equivalent to transpose for real-valued SGEMM.
     ConjugateTranspose = 2,
+}
+
+/// cuBLAS floating-point math behavior selector (`cublasMath_t`).
+#[repr(C)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum MathMode {
+    /// Keep default cuBLAS math selection.
+    Default = 0,
+    /// Permit TF32 tensor-op execution where cuBLAS supports it.
+    Tf32TensorOp = 3,
 }
 
 /// cuBLAS status values (`cublasStatus_t`).
@@ -112,6 +123,7 @@ pub struct LibCublas {
     destroy: unsafe extern "C" fn(CublasHandle) -> CublasStatus,
     get_version: unsafe extern "C" fn(CublasHandle, *mut c_int) -> CublasStatus,
     set_stream: unsafe extern "C" fn(CublasHandle, *mut c_void) -> CublasStatus,
+    set_math_mode: unsafe extern "C" fn(CublasHandle, MathMode) -> CublasStatus,
     sgemm: unsafe extern "C" fn(
         CublasHandle,
         Operation,
@@ -189,6 +201,7 @@ impl LibCublas {
                 destroy: resolve(&lib, "cublasDestroy_v2")?,
                 get_version: resolve(&lib, "cublasGetVersion_v2")?,
                 set_stream: resolve(&lib, "cublasSetStream_v2")?,
+                set_math_mode: resolve(&lib, "cublasSetMathMode")?,
                 sgemm: resolve(&lib, "cublasSgemm_v2")?,
                 sgemm_strided_batched: resolve(&lib, "cublasSgemmStridedBatched")?,
                 _lib: lib,
@@ -239,6 +252,12 @@ impl Handle {
     pub fn set_stream(&self, stream: *mut c_void) -> Result<(), CublasError> {
         let status = unsafe { (self.cublas.set_stream)(self.handle, stream) };
         check(status, "cublasSetStream_v2")
+    }
+
+    /// Configure the cuBLAS floating-point math policy.
+    pub fn set_math_mode(&self, mode: MathMode) -> Result<(), CublasError> {
+        let status = unsafe { (self.cublas.set_math_mode)(self.handle, mode) };
+        check(status, "cublasSetMathMode")
     }
 
     /// Enqueue `cublasSgemm_v2`.

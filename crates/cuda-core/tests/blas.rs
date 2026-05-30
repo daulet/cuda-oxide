@@ -4,7 +4,8 @@
  */
 
 use cuda_core::{
-    Blas, BlasError, CudaContext, CudaStream, DeviceBuffer, SgemmConfig, StridedBatchedSgemmConfig,
+    Blas, BlasError, BlasMathMode, CudaContext, CudaStream, DeviceBuffer, SgemmConfig,
+    StridedBatchedSgemmConfig,
 };
 
 const EPSILON: f32 = 1.0e-4;
@@ -16,7 +17,9 @@ fn blas_sgemm_paths_match_cpu_reference_and_validate_inputs()
     let stream = ctx.new_stream()?;
     let blas = Blas::new(&ctx)?;
 
+    blas.set_math_mode(BlasMathMode::Tf32TensorOp)?;
     check_sgemm_matches_cpu_reference(&stream, &blas)?;
+    blas.set_math_mode(BlasMathMode::Default)?;
     check_strided_batched_sgemm_matches_cpu_reference(&stream, &blas)?;
     check_sgemm_rejects_short_output_buffer(&stream, &blas)?;
     Ok(())

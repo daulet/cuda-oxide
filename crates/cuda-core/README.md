@@ -29,7 +29,7 @@ This crate turns raw CUDA handles into Rust types with automatic cleanup on drop
 - **Memory**: Async (`malloc_async`, `free_async`, `memcpy_htod_async`, ...) and sync (`malloc_sync`, `free_sync`) device memory operations.
 - **Device buffers**: `DeviceBuffer<T>` owns device memory and provides host-device transfer helpers for `T: DeviceCopy`.
 - **Low-precision buffers**: `DeviceCopy` is implemented for `cuda-lowp` FP8/FP4 storage and packed group types, so `DeviceBuffer<Fp8E4M3>` and packed FP4/FP8 buffers can move through the same typed transfer path as primitive POD values.
-- **BLAS**: `Blas::new(&ctx)` creates a cuBLAS handle tied to the cuda-oxide context. `sgemm` and `sgemm_strided_batched` enqueue row-major `f32` matrix multiplication on a caller-provided `CudaStream` and validate `DeviceBuffer` sizes before calling cuBLAS.
+- **BLAS**: `Blas::new(&ctx)` creates a cuBLAS handle tied to the cuda-oxide context. `set_math_mode` selects default or TF32 tensor-op math for following operations. `sgemm` and `sgemm_strided_batched` enqueue row-major `f32` matrix multiplication on a caller-provided `CudaStream` and validate `DeviceBuffer` sizes before calling cuBLAS.
 - **Pinned host memory**: `PinnedHostBuffer<T>` allocates page-locked host memory for faster transfers. The async transfer helpers (`DeviceBuffer::from_pinned_host`, `copy_from_pinned_host_async`, `copy_to_pinned_host_async`) are `unsafe` because they only enqueue the copy and the caller must keep the pinned buffer alive until `stream.synchronize()`. Use `copy_to_pinned_host` for a blocking DtoH helper that syncs internally.
 - **Residency memory**: `ManagedBuffer<T>` owns CUDA managed memory and supports `MemoryAdvice`, `prefetch_to`, and stream attachment. `MappedHostBuffer<T>` owns page-locked host memory with a device-visible pointer. `RegisteredHostMemory<'a, T>` maps an existing mutable host slice for GPU access while tying the registration lifetime to the borrow. `ReadOnlyRegisteredHostMemory<'a, T>` registers an immutable host slice with CUDA's device-map and read-only flags for read-only model or table data; unsupported devices return `CUDA_ERROR_NOT_SUPPORTED` so applications can select a fallback explicitly. `ReadOnlyPageableHostMemory<'a, T>` borrows immutable system-pageable/HMM-visible data for advice and unsafe asynchronous prefetch on devices reporting pageable-memory access; callers must retain the borrowed range until the stream completes.
 - **Residency policies**: `ResidencyBuffer<T>::zeroed_with` and `from_slice_with` let callers choose `Managed` or `MappedHost` from a `ResidencyRequest` instead of hard-coding one allocation strategy.
@@ -49,9 +49,10 @@ let func = module.load_function("vecadd")?;
 ```
 
 ```rust
-use cuda_core::{Blas, SgemmConfig};
+use cuda_core::{Blas, BlasMathMode, SgemmConfig};
 
 let blas = Blas::new(&ctx)?;
+blas.set_math_mode(BlasMathMode::Tf32TensorOp)?;
 let mut config = SgemmConfig::new(m, n, k);
 config.alpha = 1.0;
 config.beta = 0.0;
