@@ -70,6 +70,39 @@ impl SgemmConfig {
     }
 }
 
+/// DS4-style dense projection configuration.
+///
+/// Computes `output = activations * weights^T`, where:
+/// - `weights` is stored row-major as `out_dim x in_dim`,
+/// - `activations` is stored row-major as `n_tokens x in_dim`,
+/// - `output` is stored row-major as `n_tokens x out_dim`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ProjectionConfig {
+    /// Width of each input token and weight row.
+    pub in_dim: usize,
+    /// Number of projection output rows.
+    pub out_dim: usize,
+    /// Number of input token rows.
+    pub n_tokens: usize,
+    /// Scale factor for `activations * weights^T`.
+    pub alpha: f32,
+    /// Scale factor for existing output values.
+    pub beta: f32,
+}
+
+impl ProjectionConfig {
+    /// Build a config with `alpha = 1.0` and `beta = 0.0`.
+    pub fn new(in_dim: usize, out_dim: usize, n_tokens: usize) -> Self {
+        Self {
+            in_dim,
+            out_dim,
+            n_tokens,
+            alpha: 1.0,
+            beta: 0.0,
+        }
+    }
+}
+
 /// Row-major strided-batched SGEMM configuration.
 ///
 /// Each batch computes `C_i = alpha * A_i * B_i + beta * C_i` with the same
@@ -301,6 +334,72 @@ impl Blas {
         Ok(())
     }
 
+    /// Enqueue DS4-layout F32 projection through `cublasSgemm`.
+    pub fn project_f32(
+        &self,
+        stream: &CudaStream,
+        config: ProjectionConfig,
+        weights: &DeviceBuffer<f32>,
+        activations: &DeviceBuffer<f32>,
+        output: &mut DeviceBuffer<f32>,
+    ) -> Result<(), BlasError> {
+        ensure_same_context(&self.ctx, weights.context(), "weights buffer")?;
+        let dims = validate_projection(config, weights, activations, output)?;
+        self.bind_stream(stream)?;
+
+        unsafe {
+            self.handle.sgemm(
+                cublas_sys::Operation::Transpose,
+                cublas_sys::Operation::None,
+                dims.out_dim,
+                dims.n_tokens,
+                dims.in_dim,
+                &config.alpha,
+                weights.cu_deviceptr() as *const f32,
+                dims.in_dim,
+                activations.cu_deviceptr() as *const f32,
+                dims.in_dim,
+                &config.beta,
+                output.cu_deviceptr() as *mut f32,
+                dims.out_dim,
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Enqueue DS4-layout F16-input, F32-output projection through `cublasGemmEx`.
+    pub fn project_f16_f32(
+        &self,
+        stream: &CudaStream,
+        config: ProjectionConfig,
+        weights: &DeviceBuffer<f16>,
+        activations: &DeviceBuffer<f16>,
+        output: &mut DeviceBuffer<f32>,
+    ) -> Result<(), BlasError> {
+        ensure_same_context(&self.ctx, weights.context(), "weights buffer")?;
+        let dims = validate_projection(config, weights, activations, output)?;
+        self.bind_stream(stream)?;
+
+        unsafe {
+            self.handle.gemm_ex_f16_f32(
+                cublas_sys::Operation::Transpose,
+                cublas_sys::Operation::None,
+                dims.out_dim,
+                dims.n_tokens,
+                dims.in_dim,
+                &config.alpha,
+                weights.cu_deviceptr() as *const c_void,
+                dims.in_dim,
+                activations.cu_deviceptr() as *const c_void,
+                dims.in_dim,
+                &config.beta,
+                output.cu_deviceptr() as *mut f32,
+                dims.out_dim,
+            )?;
+        }
+        Ok(())
+    }
+
     /// Enqueue row-major strided-batched SGEMM on `stream`.
     pub fn sgemm_strided_batched(
         &self,
@@ -363,6 +462,13 @@ struct BatchedSgemmDims {
     stride_a: i64,
     stride_b: i64,
     stride_c: i64,
+}
+
+#[derive(Clone, Copy)]
+struct ProjectionDims {
+    in_dim: i32,
+    out_dim: i32,
+    n_tokens: i32,
 }
 
 fn validate_sgemm(
@@ -458,6 +564,40 @@ fn validate_batched_sgemm(
         stride_a: to_i64("stride_a", config.stride_a)?,
         stride_b: to_i64("stride_b", config.stride_b)?,
         stride_c: to_i64("stride_c", config.stride_c)?,
+    })
+}
+
+fn validate_projection<T: crate::device_buffer::DeviceCopy>(
+    config: ProjectionConfig,
+    weights: &DeviceBuffer<T>,
+    activations: &DeviceBuffer<T>,
+    output: &DeviceBuffer<f32>,
+) -> Result<ProjectionDims, BlasError> {
+    ensure_same_context(
+        weights.context(),
+        activations.context(),
+        "activations buffer",
+    )?;
+    ensure_same_context(weights.context(), output.context(), "output buffer")?;
+
+    let in_dim = to_nonzero_i32("in_dim", config.in_dim)?;
+    let out_dim = to_nonzero_i32("out_dim", config.out_dim)?;
+    let n_tokens = to_nonzero_i32("n_tokens", config.n_tokens)?;
+    let weight_required = checked_mul("weights matrix elements", config.out_dim, config.in_dim)?;
+    let activation_required = checked_mul(
+        "activations matrix elements",
+        config.n_tokens,
+        config.in_dim,
+    )?;
+    let output_required = checked_mul("output matrix elements", config.n_tokens, config.out_dim)?;
+    ensure_len("weights", weights.len(), weight_required)?;
+    ensure_len("activations", activations.len(), activation_required)?;
+    ensure_len("output", output.len(), output_required)?;
+
+    Ok(ProjectionDims {
+        in_dim,
+        out_dim,
+        n_tokens,
     })
 }
 

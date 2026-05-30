@@ -6,8 +6,8 @@
 #![feature(f16)]
 
 use cuda_core::{
-    Blas, BlasError, BlasMathMode, CudaContext, CudaStream, DeviceBuffer, SgemmConfig,
-    StridedBatchedSgemmConfig,
+    Blas, BlasError, BlasMathMode, CudaContext, CudaStream, DeviceBuffer, ProjectionConfig,
+    SgemmConfig, StridedBatchedSgemmConfig,
 };
 
 const EPSILON: f32 = 1.0e-4;
@@ -23,6 +23,7 @@ fn blas_sgemm_paths_match_cpu_reference_and_validate_inputs()
     check_sgemm_matches_cpu_reference(&stream, &blas)?;
     blas.set_math_mode(BlasMathMode::Default)?;
     check_gemm_ex_f16_f32_matches_cpu_reference(&stream, &blas)?;
+    check_projection_layout_matches_cpu_reference(&stream, &blas)?;
     check_strided_batched_sgemm_matches_cpu_reference(&stream, &blas)?;
     check_sgemm_rejects_short_output_buffer(&stream, &blas)?;
     Ok(())
@@ -78,6 +79,65 @@ fn check_gemm_ex_f16_f32_matches_cpu_reference(
     )?;
     let actual = c_dev.to_host_vec(stream)?;
     assert_close(&actual, &expected);
+    Ok(())
+}
+
+fn check_projection_layout_matches_cpu_reference(
+    stream: &CudaStream,
+    blas: &Blas,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let config = ProjectionConfig::new(4, 3, 2);
+    let weights_f16 = [
+        f16::from_bits(0x3c00),
+        f16::from_bits(0x3800),
+        f16::from_bits(0xbc00),
+        f16::from_bits(0x4000),
+        f16::from_bits(0x3400),
+        f16::from_bits(0xc000),
+        f16::from_bits(0x3e00),
+        f16::from_bits(0xb800),
+        f16::from_bits(0x4200),
+        f16::from_bits(0x3c00),
+        f16::from_bits(0x0000),
+        f16::from_bits(0xbc00),
+    ];
+    let activations_f16 = [
+        f16::from_bits(0x3c00),
+        f16::from_bits(0xc000),
+        f16::from_bits(0x3800),
+        f16::from_bits(0x4000),
+        f16::from_bits(0xb800),
+        f16::from_bits(0x3e00),
+        f16::from_bits(0xbc00),
+        f16::from_bits(0x3400),
+    ];
+    let weights_f32 = weights_f16.map(|value| value as f32);
+    let activations_f32 = activations_f16.map(|value| value as f32);
+    let expected = reference_projection(config, &weights_f32, &activations_f32);
+
+    let weights_f32_dev = DeviceBuffer::from_host(stream, &weights_f32)?;
+    let activations_f32_dev = DeviceBuffer::from_host(stream, &activations_f32)?;
+    let mut output_f32_dev = DeviceBuffer::<f32>::zeroed(stream, expected.len())?;
+    blas.project_f32(
+        stream,
+        config,
+        &weights_f32_dev,
+        &activations_f32_dev,
+        &mut output_f32_dev,
+    )?;
+    assert_close(&output_f32_dev.to_host_vec(stream)?, &expected);
+
+    let weights_f16_dev = DeviceBuffer::from_host(stream, &weights_f16)?;
+    let activations_f16_dev = DeviceBuffer::from_host(stream, &activations_f16)?;
+    let mut output_f16_dev = DeviceBuffer::<f32>::zeroed(stream, expected.len())?;
+    blas.project_f16_f32(
+        stream,
+        config,
+        &weights_f16_dev,
+        &activations_f16_dev,
+        &mut output_f16_dev,
+    )?;
+    assert_close(&output_f16_dev.to_host_vec(stream)?, &expected);
     Ok(())
 }
 
@@ -205,6 +265,20 @@ fn reference_sgemm(
             c[index] = alpha * sum + beta * c[index];
         }
     }
+}
+
+fn reference_projection(
+    config: ProjectionConfig,
+    weights: &[f32],
+    activations: &[f32],
+) -> Vec<f32> {
+    let mut output = Vec::with_capacity(config.out_dim * config.n_tokens);
+    for token in activations.chunks_exact(config.in_dim) {
+        for row in weights.chunks_exact(config.in_dim) {
+            output.push(row.iter().zip(token).map(|(w, x)| w * x).sum());
+        }
+    }
+    output
 }
 
 fn assert_close(actual: &[f32], expected: &[f32]) {
