@@ -209,6 +209,22 @@ impl CudaModule {
 }
 
 impl CudaFunction {
+    /// Opts this kernel into a maximum amount of dynamic shared memory per block.
+    ///
+    /// Kernels that request more dynamic shared memory than the CUDA default
+    /// launch limit must call this before launching with that larger size.
+    pub fn set_max_dynamic_shared_memory_size(&self, bytes: i32) -> Result<(), DriverError> {
+        self.module.ctx.bind_to_thread()?;
+        unsafe {
+            cuda_bindings::cuFuncSetAttribute(
+                self.cu_function,
+                cuda_bindings::CUfunction_attribute_enum_CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES,
+                bytes,
+            )
+        }
+        .result()
+    }
+
     /// Returns the raw `CUfunction` handle.
     ///
     /// # Safety
