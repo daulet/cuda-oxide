@@ -255,7 +255,8 @@ pub unsafe fn malloc_mapped_host(num_bytes: usize) -> Result<*mut c_void, Driver
 /// # Safety
 ///
 /// - `ptr` must point into memory allocated by [`malloc_mapped_host`] or
-///   registered by [`host_register_mapped`].
+///   registered by [`host_register_mapped`] or
+///   [`host_register_mapped_read_only`].
 /// - A CUDA context must be bound to the calling thread.
 pub unsafe fn host_get_device_pointer(ptr: *mut c_void) -> Result<CUdeviceptr, DriverError> {
     let mut dev_ptr = MaybeUninit::uninit();
@@ -289,12 +290,41 @@ pub unsafe fn host_register_mapped(ptr: *mut c_void, num_bytes: usize) -> Result
     .result()
 }
 
-/// Unregisters host memory previously registered by [`host_register_mapped`].
+/// Registers an existing immutable host allocation for device read access.
+///
+/// Pair with [`host_unregister`].
+///
+/// # Safety
+///
+/// - `ptr` must point to at least `num_bytes` of live host memory.
+/// - GPU work must treat the registered range as read-only.
+/// - The range must not already be registered with CUDA.
+/// - The range must satisfy the active CUDA driver's host-registration
+///   constraints.
+/// - The active device must support read-only mapped host registration.
+/// - No in-flight CUDA work may reference the range after it is unregistered.
+pub unsafe fn host_register_mapped_read_only(
+    ptr: *const c_void,
+    num_bytes: usize,
+) -> Result<(), DriverError> {
+    unsafe {
+        cuda_bindings::cuMemHostRegister_v2(
+            ptr.cast_mut(),
+            num_bytes,
+            cuda_bindings::CU_MEMHOSTREGISTER_DEVICEMAP
+                | cuda_bindings::CU_MEMHOSTREGISTER_READ_ONLY,
+        )
+    }
+    .result()
+}
+
+/// Unregisters host memory previously registered by [`host_register_mapped`]
+/// or [`host_register_mapped_read_only`].
 ///
 /// # Safety
 ///
 /// - `ptr` must be the base pointer originally passed to
-///   [`host_register_mapped`].
+///   [`host_register_mapped`] or [`host_register_mapped_read_only`].
 /// - No in-flight CUDA work may reference the registered range.
 pub unsafe fn host_unregister(ptr: *mut c_void) -> Result<(), DriverError> {
     unsafe { cuda_bindings::cuMemHostUnregister(ptr) }.result()

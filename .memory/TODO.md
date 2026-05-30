@@ -103,6 +103,42 @@
      - Claude CLI non-interactive review: no blocking issues.
      - Claude CLI non-interactive review: no blocking issues.
 
+### DS4 Read-Only Registered Model Mapping Extension
+
+- Status: complete
+- Goal: expose the CUDA read-only mapped host registration contract needed by
+  DS4 model-file ranges without weakening the immutable host borrow or hiding
+  unsupported-device errors.
+- Source surface: `crates/cuda-core` memory primitives, residency handles,
+  tests, and public crate documentation.
+- Required evidence:
+  - a direct `DEVICEMAP | READ_ONLY` host-registration primitive,
+  - an RAII read-only registered-host handle borrowing `&[T]`,
+  - B300 runtime verification of either a valid device-visible mapping or the
+    exact CUDA unsupported result that an application must handle,
+  - no compatibility wrapper or implicit fallback in `cuda-core`.
+
+#### Planned milestones
+
+1. Read-only registered host range handle
+   - Status: complete
+   - End-state: `cuda-core` can register immutable host-backed model ranges as
+     device-readable mapped memory with explicit CUDA error propagation.
+   - Validation:
+     - Local `cargo fmt --all -- --check`: passed.
+     - Local `git diff --check`: passed.
+     - B300 `cargo +nightly-2026-04-03 fmt --all -- --check`: could not run;
+       the installed pod toolchain does not include the `rustfmt` component.
+     - `CUDA_HOME=/usr/local/cuda-13.2 cargo +nightly-2026-04-03 test -p
+       cuda-core --test residency -- --nocapture` in `default/ds4-rust-port-b300`
+       on `hou2-prod1`: passed; 11 tests, with the live read-only registration
+       branch returning `DriverError(801, "operation not supported")`.
+     - `CUDA_HOME=/usr/local/cuda-13.2 cargo +nightly-2026-04-03 test -p
+       cuda-core -- --nocapture` in the same B300 pod: passed; full touched
+       crate suite including doctests.
+     - Claude CLI non-interactive review: unavailable; `claude --bare -p`
+       exited with `Not logged in`.
+
 ### 2. Production Dense Linear Algebra Integration
 
 - Status: complete

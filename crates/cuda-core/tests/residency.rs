@@ -3,9 +3,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+use cuda_core::sys;
 use cuda_core::{
     CudaContext, ManagedBuffer, MappedHostBuffer, MemoryAdvice, MemoryLocation,
-    RegisteredHostMemory, ResidencyBuffer, ResidencyStrategy, StreamAttachment,
+    ReadOnlyRegisteredHostMemory, RegisteredHostMemory, ResidencyBuffer, ResidencyStrategy,
+    StreamAttachment,
 };
 
 #[test]
@@ -147,9 +149,33 @@ fn registered_host_memory_maps_existing_slice() {
 }
 
 #[test]
+fn read_only_registered_host_memory_maps_or_reports_unsupported() {
+    let ctx = CudaContext::new(0).expect("failed to create CUDA context");
+    let data = [31_u32, 32, 33, 34];
+
+    match ReadOnlyRegisteredHostMemory::new(&ctx, &data) {
+        Ok(registered) => {
+            eprintln!("read-only registered host memory: mapped");
+            assert_eq!(registered.len(), 4);
+            assert_eq!(registered.num_bytes(), 16);
+            assert_ne!(registered.cu_deviceptr(), 0);
+            assert_eq!(registered.as_slice(), &[31, 32, 33, 34]);
+            assert!(format!("{registered:?}").contains("ReadOnlyRegisteredHostMemory"));
+        }
+        Err(err) => {
+            eprintln!("read-only registered host memory: {err:?}");
+            assert_eq!(err.0, sys::cudaError_enum_CUDA_ERROR_NOT_SUPPORTED);
+        }
+    }
+
+    assert_eq!(data, [31, 32, 33, 34]);
+}
+
+#[test]
 fn residency_handles_support_empty_allocations() {
     let ctx = CudaContext::new(0).expect("failed to create CUDA context");
     let mut data: [u32; 0] = [];
+    let read_only_data: [u32; 0] = [];
 
     let managed =
         ManagedBuffer::<u32>::zeroed(&ctx, 0).expect("failed to create empty managed buffer");
@@ -157,6 +183,8 @@ fn residency_handles_support_empty_allocations() {
         MappedHostBuffer::<u32>::zeroed(&ctx, 0).expect("failed to create empty mapped host");
     let registered =
         RegisteredHostMemory::new(&ctx, &mut data).expect("failed to register empty slice");
+    let read_only_registered = ReadOnlyRegisteredHostMemory::new(&ctx, &read_only_data)
+        .expect("failed to register empty read-only slice");
 
     assert!(managed.is_empty());
     assert_eq!(managed.num_bytes(), 0);
@@ -172,12 +200,18 @@ fn residency_handles_support_empty_allocations() {
     assert_eq!(registered.num_bytes(), 0);
     assert_eq!(registered.cu_deviceptr(), 0);
     assert_eq!(registered.as_slice(), &[]);
+
+    assert!(read_only_registered.is_empty());
+    assert_eq!(read_only_registered.num_bytes(), 0);
+    assert_eq!(read_only_registered.cu_deviceptr(), 0);
+    assert_eq!(read_only_registered.as_slice(), &[]);
 }
 
 #[test]
 fn residency_handles_support_zero_sized_types() {
     let ctx = CudaContext::new(0).expect("failed to create CUDA context");
     let mut data = [(); 8];
+    let read_only_data = [(); 8];
 
     let managed =
         ManagedBuffer::<()>::zeroed(&ctx, 8).expect("failed to create zst managed buffer");
@@ -185,6 +219,8 @@ fn residency_handles_support_zero_sized_types() {
         MappedHostBuffer::<()>::zeroed(&ctx, 8).expect("failed to create zst mapped host buffer");
     let registered =
         RegisteredHostMemory::new(&ctx, &mut data).expect("failed to register zst slice");
+    let read_only_registered = ReadOnlyRegisteredHostMemory::new(&ctx, &read_only_data)
+        .expect("failed to register read-only zst slice");
 
     assert_eq!(managed.len(), 8);
     assert_eq!(managed.num_bytes(), 0);
@@ -197,6 +233,10 @@ fn residency_handles_support_zero_sized_types() {
     assert_eq!(registered.len(), 8);
     assert_eq!(registered.num_bytes(), 0);
     assert_eq!(registered.as_slice(), &[(); 8]);
+
+    assert_eq!(read_only_registered.len(), 8);
+    assert_eq!(read_only_registered.num_bytes(), 0);
+    assert_eq!(read_only_registered.as_slice(), &[(); 8]);
 }
 
 #[test]

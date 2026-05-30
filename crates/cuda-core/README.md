@@ -18,6 +18,7 @@ This crate turns raw CUDA handles into Rust types with automatic cleanup on drop
 | `ManagedBuffer<T>`    | managed memory         | `cuMemFree_v2`                     |
 | `MappedHostBuffer<T>` | mapped host memory     | `cuMemFreeHost`                    |
 | `RegisteredHostMemory<'a, T>` | registered host slice | `cuMemHostUnregister`    |
+| `ReadOnlyRegisteredHostMemory<'a, T>` | read-only registered host slice | `cuMemHostUnregister` |
 
 ## Key APIs
 
@@ -29,7 +30,7 @@ This crate turns raw CUDA handles into Rust types with automatic cleanup on drop
 - **Low-precision buffers**: `DeviceCopy` is implemented for `cuda-lowp` FP8/FP4 storage and packed group types, so `DeviceBuffer<Fp8E4M3>` and packed FP4/FP8 buffers can move through the same typed transfer path as primitive POD values.
 - **BLAS**: `Blas::new(&ctx)` creates a cuBLAS handle tied to the cuda-oxide context. `sgemm` and `sgemm_strided_batched` enqueue row-major `f32` matrix multiplication on a caller-provided `CudaStream` and validate `DeviceBuffer` sizes before calling cuBLAS.
 - **Pinned host memory**: `PinnedHostBuffer<T>` allocates page-locked host memory for faster transfers. The async transfer helpers (`DeviceBuffer::from_pinned_host`, `copy_from_pinned_host_async`, `copy_to_pinned_host_async`) are `unsafe` because they only enqueue the copy and the caller must keep the pinned buffer alive until `stream.synchronize()`. Use `copy_to_pinned_host` for a blocking DtoH helper that syncs internally.
-- **Residency memory**: `ManagedBuffer<T>` owns CUDA managed memory and supports `MemoryAdvice`, `prefetch_to`, and stream attachment. `MappedHostBuffer<T>` owns page-locked host memory with a device-visible pointer. `RegisteredHostMemory<'a, T>` maps an existing mutable host slice for GPU access while tying the registration lifetime to the borrow.
+- **Residency memory**: `ManagedBuffer<T>` owns CUDA managed memory and supports `MemoryAdvice`, `prefetch_to`, and stream attachment. `MappedHostBuffer<T>` owns page-locked host memory with a device-visible pointer. `RegisteredHostMemory<'a, T>` maps an existing mutable host slice for GPU access while tying the registration lifetime to the borrow. `ReadOnlyRegisteredHostMemory<'a, T>` registers an immutable host slice with CUDA's device-map and read-only flags for read-only model or table data; unsupported devices return `CUDA_ERROR_NOT_SUPPORTED` so applications can select a fallback explicitly.
 - **Residency policies**: `ResidencyBuffer<T>::zeroed_with` and `from_slice_with` let callers choose `Managed` or `MappedHost` from a `ResidencyRequest` instead of hard-coding one allocation strategy.
 - **Launch**: `launch_kernel(func, grid, block, smem, stream, params)` enqueues a kernel on a stream. `launch_kernel_ex(...)` adds cluster dimensions (Hopper+); `launch_kernel_cooperative(...)` enables `Grid::sync()` for grid-wide barriers.
 - **Events**: `ctx.new_event(flags)` for synchronization points and GPU-side timing via `event.elapsed_ms(end)`.

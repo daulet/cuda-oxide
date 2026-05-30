@@ -765,7 +765,13 @@ impl<'a, T: DeviceCopy> RegisteredHostMemory<'a, T> {
                 crate::memory::host_register_mapped(ptr.as_ptr().cast(), num_bytes)?;
             }
             let device_ptr =
-                unsafe { crate::memory::host_get_device_pointer(ptr.as_ptr().cast())? };
+                match unsafe { crate::memory::host_get_device_pointer(ptr.as_ptr().cast()) } {
+                    Ok(device_ptr) => device_ptr,
+                    Err(err) => {
+                        let _ = unsafe { crate::memory::host_unregister(ptr.as_ptr().cast()) };
+                        return Err(err);
+                    }
+                };
             (ptr, device_ptr)
         };
 
@@ -881,6 +887,162 @@ impl<T: DeviceCopy> Deref for RegisteredHostMemory<'_, T> {
 impl<T: DeviceCopy> DerefMut for RegisteredHostMemory<'_, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.as_mut_slice()
+    }
+}
+
+/// Registration guard for immutable host memory exposed to GPU reads.
+///
+/// The guard does not own the backing slice; it unregisters the slice from CUDA
+/// on drop. The lifetime keeps the original shared borrow alive for as long as
+/// kernels may receive the device-visible pointer. The CUDA read-only
+/// registration flag is required because this type never grants mutable host
+/// access to the mapped region.
+///
+/// Drop does not synchronize. All GPU work that may read the registered range
+/// must complete before the guard is dropped.
+///
+/// Some devices or driver configurations do not support CUDA's read-only host
+/// registration mode. In that case [`Self::new`] returns
+/// `CUDA_ERROR_NOT_SUPPORTED`; callers choose any fallback policy explicitly.
+///
+/// Read-only registered host memory requires `T: DeviceCopy`, so host-owned
+/// values such as [`String`] are rejected.
+///
+/// ```compile_fail
+/// # use cuda_core::{CudaContext, ReadOnlyRegisteredHostMemory};
+/// # fn rejects_non_device_copy(ctx: &std::sync::Arc<CudaContext>, data: &[String]) {
+/// let _ = ReadOnlyRegisteredHostMemory::new(ctx, data);
+/// # }
+/// ```
+pub struct ReadOnlyRegisteredHostMemory<'a, T: DeviceCopy> {
+    ptr: NonNull<T>,
+    device_ptr: CUdeviceptr,
+    len: usize,
+    num_bytes: usize,
+    ctx: Arc<CudaContext>,
+    _borrow: PhantomData<&'a [T]>,
+}
+
+// SAFETY: moving the guard transfers an immutable borrow across threads, which
+// is safe only when the borrowed elements may be shared across threads.
+unsafe impl<T: DeviceCopy + Sync> Send for ReadOnlyRegisteredHostMemory<'_, T> {}
+// SAFETY: shared host access exposes only `&[T]`.
+unsafe impl<T: DeviceCopy + Sync> Sync for ReadOnlyRegisteredHostMemory<'_, T> {}
+
+impl<'a, T: DeviceCopy> ReadOnlyRegisteredHostMemory<'a, T> {
+    /// Registers `data` as device-readable memory and returns its device pointer.
+    ///
+    /// Returns `CUDA_ERROR_NOT_SUPPORTED` when the device or driver does not
+    /// implement read-only host registration.
+    pub fn new(ctx: &Arc<CudaContext>, data: &'a [T]) -> Result<Self, DriverError> {
+        let num_bytes = allocation_size::<T>(data.len())?;
+        let (ptr, device_ptr) = if num_bytes == 0 {
+            (NonNull::dangling(), 0)
+        } else {
+            ctx.bind_to_thread()?;
+            let ptr = NonNull::new(data.as_ptr().cast_mut()).ok_or_else(invalid_value)?;
+            unsafe {
+                crate::memory::host_register_mapped_read_only(ptr.as_ptr().cast(), num_bytes)?;
+            }
+            let device_ptr =
+                match unsafe { crate::memory::host_get_device_pointer(ptr.as_ptr().cast()) } {
+                    Ok(device_ptr) => device_ptr,
+                    Err(err) => {
+                        let _ = unsafe { crate::memory::host_unregister(ptr.as_ptr().cast()) };
+                        return Err(err);
+                    }
+                };
+            (ptr, device_ptr)
+        };
+
+        Ok(Self {
+            ptr,
+            device_ptr,
+            len: data.len(),
+            num_bytes,
+            ctx: ctx.clone(),
+            _borrow: PhantomData,
+        })
+    }
+
+    /// Number of elements in the registered range.
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    /// Returns `true` if the registered range contains no elements.
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    /// Total registered size in bytes (`len * size_of::<T>()`).
+    #[inline]
+    pub fn num_bytes(&self) -> usize {
+        self.num_bytes
+    }
+
+    /// Returns the CUDA context used to register this range.
+    #[inline]
+    pub fn context(&self) -> &Arc<CudaContext> {
+        &self.ctx
+    }
+
+    /// Returns the device-visible pointer.
+    ///
+    /// Empty and zero-sized registered ranges return `0`.
+    #[inline]
+    pub fn cu_deviceptr(&self) -> CUdeviceptr {
+        self.device_ptr
+    }
+
+    /// Returns the host pointer.
+    #[inline]
+    pub fn as_ptr(&self) -> *const T {
+        self.ptr.as_ptr()
+    }
+
+    /// Returns the registered range as a host slice.
+    #[inline]
+    pub fn as_slice(&self) -> &[T] {
+        unsafe { slice::from_raw_parts(self.ptr.as_ptr(), self.len) }
+    }
+}
+
+impl<T: DeviceCopy> Drop for ReadOnlyRegisteredHostMemory<'_, T> {
+    fn drop(&mut self) {
+        if self.num_bytes != 0 {
+            self.ctx.record_err(self.ctx.bind_to_thread());
+            self.ctx
+                .record_err(unsafe { crate::memory::host_unregister(self.ptr.as_ptr().cast()) });
+        }
+    }
+}
+
+impl<T: DeviceCopy> fmt::Debug for ReadOnlyRegisteredHostMemory<'_, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ReadOnlyRegisteredHostMemory")
+            .field("ptr", &self.ptr)
+            .field("device_ptr", &self.device_ptr)
+            .field("len", &self.len)
+            .field("num_bytes", &self.num_bytes)
+            .field("ctx", &self.ctx)
+            .finish()
+    }
+}
+
+impl<T: DeviceCopy> AsRef<[T]> for ReadOnlyRegisteredHostMemory<'_, T> {
+    fn as_ref(&self) -> &[T] {
+        self.as_slice()
+    }
+}
+
+impl<T: DeviceCopy> Deref for ReadOnlyRegisteredHostMemory<'_, T> {
+    type Target = [T];
+
+    fn deref(&self) -> &Self::Target {
+        self.as_slice()
     }
 }
 

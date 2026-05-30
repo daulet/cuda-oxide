@@ -21,8 +21,9 @@
 //! - [`CudaModule`] / [`CudaFunction`] -- PTX/cubin loading and kernel handle
 //!   extraction.
 //! - [`PinnedHostBuffer`] -- page-locked host memory for CUDA transfers.
-//! - [`ManagedBuffer`], [`MappedHostBuffer`], and [`RegisteredHostMemory`] --
-//!   memory residency handles for large CUDA-facing regions.
+//! - [`ManagedBuffer`], [`MappedHostBuffer`], [`RegisteredHostMemory`], and
+//!   [`ReadOnlyRegisteredHostMemory`] -- memory residency handles for large
+//!   CUDA-facing regions.
 //! - [`LaunchConfig`] -- grid/block dimension helper.
 //! - [`Blas`] -- stream-aware cuBLAS dense linear algebra integration.
 //! - [`memory`] -- free functions for device allocation, transfer, and memset
@@ -82,8 +83,8 @@ pub use launch::LaunchConfig;
 pub use module::{CudaFunction, CudaModule};
 pub use pinned_host_buffer::PinnedHostBuffer;
 pub use residency::{
-    ManagedBuffer, MappedHostBuffer, MemoryAdvice, MemoryLocation, RegisteredHostMemory,
-    ResidencyBuffer, ResidencyRequest, ResidencyStrategy, StreamAttachment,
+    ManagedBuffer, MappedHostBuffer, MemoryAdvice, MemoryLocation, ReadOnlyRegisteredHostMemory,
+    RegisteredHostMemory, ResidencyBuffer, ResidencyRequest, ResidencyStrategy, StreamAttachment,
 };
 pub use stream::CudaStream;
 
