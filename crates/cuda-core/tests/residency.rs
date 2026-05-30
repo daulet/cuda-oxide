@@ -11,6 +11,15 @@ use cuda_core::{
 };
 
 #[test]
+fn context_reports_device_memory_capacity() {
+    let ctx = CudaContext::new(0).expect("failed to create CUDA context");
+    let info = ctx.memory_info().expect("failed to query CUDA memory info");
+
+    assert!(info.total_bytes > 0);
+    assert!(info.free_bytes <= info.total_bytes);
+}
+
+#[test]
 fn managed_buffer_exposes_host_slice_and_device_pointer() {
     let ctx = CudaContext::new(0).expect("failed to create CUDA context");
     let mut buffer = ManagedBuffer::<u32>::zeroed(&ctx, 4).expect("failed to allocate managed");

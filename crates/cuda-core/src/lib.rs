@@ -72,7 +72,7 @@ pub mod stream;
 pub mod vmm;
 
 pub use blas::{Blas, BlasError, SgemmConfig, StridedBatchedSgemmConfig};
-pub use context::CudaContext;
+pub use context::{CudaContext, DeviceMemoryInfo};
 /// Raw CUDA driver bindings re-exported for direct access when needed.
 pub use cuda_bindings as sys;
 pub use device_buffer::{DeviceBuffer, DeviceCopy};

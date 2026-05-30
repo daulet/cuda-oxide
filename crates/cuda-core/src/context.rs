@@ -23,6 +23,15 @@ use std::mem::MaybeUninit;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 
+/// Current available and total memory reported by a CUDA device context.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DeviceMemoryInfo {
+    /// Bytes available for new allocations at query time.
+    pub free_bytes: usize,
+    /// Total bytes addressable by the active CUDA device.
+    pub total_bytes: usize,
+}
+
 /// Owns a reference to a CUDA device's primary context.
 ///
 /// Created via [`CudaContext::new`] and typically held in an `Arc` so streams,
@@ -254,6 +263,24 @@ impl CudaContext {
             )
             .result()?;
             Ok((major.assume_init(), minor.assume_init()))
+        }
+    }
+
+    /// Queries available and total device memory in bytes.
+    ///
+    /// The available value is a point-in-time capacity observation and may
+    /// change immediately as other allocations are made or released.
+    pub fn memory_info(&self) -> Result<DeviceMemoryInfo, DriverError> {
+        self.bind_to_thread()?;
+        let mut free_bytes = MaybeUninit::uninit();
+        let mut total_bytes = MaybeUninit::uninit();
+        unsafe {
+            cuda_bindings::cuMemGetInfo_v2(free_bytes.as_mut_ptr(), total_bytes.as_mut_ptr())
+                .result()?;
+            Ok(DeviceMemoryInfo {
+                free_bytes: free_bytes.assume_init(),
+                total_bytes: total_bytes.assume_init(),
+            })
         }
     }
 
