@@ -42,7 +42,7 @@ pub fn emit_dp4a_i8(
         );
     }
 
-    let i32_type = IntegerType::get(ctx, 32, Signedness::Signless);
+    let i32_type = IntegerType::get(ctx, 32, Signedness::Signed);
     let (a, mut last_op) = rvalue::translate_operand(
         ctx,
         body,
