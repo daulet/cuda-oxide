@@ -17,11 +17,10 @@
 //! # How this example loads code on the GPU
 //!
 //! The float-math kernel lowers to CUDA `__nv_*` libdevice calls (`__nv_sinf`,
-//! `__nv_powf`, ...). `llc` cannot resolve those, so cuda-oxide auto-detects
-//! them and emits NVVM IR (`primitive_stress.ll`) instead of `.ptx`.
-//! [`cuda_host::ltoir::load_kernel_module`] then transparently runs the
-//! libNVVM (with libdevice) + nvJitLink pipeline and loads the resulting
-//! cubin -- no external tools, no symlinks, no boilerplate.
+//! `__nv_powf`, ...). cuda-oxide emits PTX containing those unresolved calls.
+//! [`cuda_host::ltoir::load_kernel_module`] then compiles libdevice to LTOIR,
+//! links it against that PTX with nvJitLink, and loads the resulting cubin --
+//! no external tools, no symlinks, no boilerplate.
 //!
 //! Run: `cargo oxide run primitive_stress`
 
@@ -229,10 +228,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ctx = CudaContext::new(0)?;
     let stream = ctx.default_stream();
 
-    // Loads `primitive_stress.{cubin,ptx}` directly when cuda-oxide produced
-    // PTX, or builds a cubin from `primitive_stress.ll` when cuda-oxide
-    // emitted NVVM IR (because libdevice was needed). All `dlopen`-based,
-    // no external C tools.
+    // Loads ordinary PTX directly or links PTX with libdevice calls to a
+    // cubin on demand. All `dlopen`-based, no external C tools.
     let module = ltoir::load_kernel_module(&ctx, "primitive_stress")?;
     let cfg = LaunchConfig::for_num_elems(1);
 

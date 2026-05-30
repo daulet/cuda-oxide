@@ -96,12 +96,12 @@ pub use cuda_async;
 #[cfg(feature = "async")]
 pub use cuda_async::launch::{AsyncKernelLaunch, OwnedAsyncKernelLaunch};
 
-/// Loads a compiled kernel module by name. Tries `<name>.cubin`, then
-/// `<name>.ptx`, and finally falls through to the LTOIR build path
-/// (`<name>.ll` plus libdevice → cubin) when cuda-oxide auto-detected
-/// CUDA libdevice math intrinsics during the build. Most beginner code
-/// never sees the LTOIR path because `vecadd`-style kernels emit `.ptx`
-/// directly. See [`ltoir`] for the underlying pipeline and discovery rules.
+/// Loads a compiled kernel module by name. PTX containing CUDA libdevice
+/// references (`__nv_*`) is linked with libdevice LTOIR into a cubin for the
+/// executing CUDA context; ready cubins and ordinary PTX are loaded directly.
+/// Most beginner code never sees the linking path because `vecadd`-style
+/// kernels contain no libdevice calls. See [`ltoir`] for the underlying
+/// pipeline and discovery rules.
 pub use ltoir::{LtoirError, load_kernel_module};
 
 // Re-export launch macros from cuda-macros for convenience.

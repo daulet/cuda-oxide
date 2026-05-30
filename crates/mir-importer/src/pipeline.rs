@@ -340,22 +340,22 @@ pub fn run_pipeline(
 
     // Detect CUDA libdevice usage.
     //
-    // Lowering the rustc float-math intrinsics emits `__nv_*` libdevice
-    // calls (e.g. `__nv_sinf`, `__nv_pow`). `llc` cannot resolve those — they
-    // need libNVVM + nvJitLink + `libdevice.10.bc`, which the example owns
-    // (see `examples/device_ffi_test/tools/`). When we see them we:
-    //   1. Force NVVM IR mode so the `.ll` is suitable for libNVVM input.
-    //   2. Skip the `llc → .ptx` step, because the resulting PTX would have
-    //      unresolved `__nv_*` extern calls and `cuModuleLoad` would reject
-    //      it.
-    // The example is then expected to feed the `.ll` through the LTOIR
-    // pipeline (compile_ltoir + link_ltoir) and load the resulting cubin.
+    // Lowering rustc float-math intrinsics emits `__nv_*` libdevice calls
+    // (e.g. `__nv_sinf`, `__nv_pow`). `llc` can lower the kernel to PTX, but
+    // that PTX still has unresolved `__nv_*` extern calls and cannot be loaded
+    // directly. The host `ltoir` helper recognizes those calls and links the
+    // PTX against libdevice LTOIR through nvJitLink.
+    //
+    // Do not auto-select NVVM IR for this path: the LLVM dialect is
+    // opaque-pointer based, while released libNVVM versions still reject
+    // opaque-pointer textual kernel IR. Explicit `emit_nvvm_ir` remains
+    // available for callers that provide compatible NVVM IR consumers.
     let needs_libdevice = module_uses_libdevice(&ctx, module_op_ptr);
-    let emit_nvvm_ir = config.emit_nvvm_ir || needs_libdevice;
+    let emit_nvvm_ir = config.emit_nvvm_ir;
     if needs_libdevice && !config.emit_nvvm_ir && config.verbose {
         eprintln!(
             "\n=== Detected CUDA libdevice (`__nv_*`) calls; \
-             auto-emitting NVVM IR (skip llc) ==="
+             emitting PTX for host-side libdevice linking ==="
         );
     }
 
@@ -370,23 +370,17 @@ pub fn run_pipeline(
         eprintln!("LLVM IR written to {}", ll_path.display());
     }
 
-    // Step 8: Generate PTX or stop at NVVM IR for libNVVM-owned paths.
+    // Step 8: Generate PTX or stop at explicitly requested NVVM IR.
     if emit_nvvm_ir {
         // Skip llc. Return a would-be ptx_path so callers see a stable shape;
-        // the file does not exist and the example must build its own cubin
-        // from `ll_path`.
+        // the file does not exist and the consumer owns handling `ll_path`.
         let ptx_path = config
             .output_dir
             .join(format!("{}.ptx", config.output_name));
         if config.verbose {
-            let reason = if needs_libdevice {
-                "libdevice present"
-            } else {
-                "NVVM IR requested"
-            };
             eprintln!(
                 "\n=== Skipping llc ({}); consumer owns libNVVM/nvJitLink build ===",
-                reason
+                "NVVM IR requested"
             );
         }
         Ok(CompilationResult {

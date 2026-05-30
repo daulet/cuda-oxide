@@ -3,24 +3,24 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-//! Build a cubin from cuda-oxide's NVVM IR output via libNVVM + libdevice + nvJitLink.
+//! Link cuda-oxide kernels that require CUDA libdevice math into a cubin.
 //!
 //! When a kernel uses Rust float math intrinsics (`sin`, `cos`, `exp`, `pow`,
-//! ...), cuda-oxide lowers them to CUDA `__nv_*` libdevice calls, auto-detects
-//! their presence, emits NVVM IR (`<name>.ll`) instead of `.ptx`, and skips
-//! `llc`. The application then has to:
+//! ...), cuda-oxide lowers them to CUDA `__nv_*` libdevice calls and emits PTX
+//! containing unresolved calls. The application then has to:
 //!
-//! 1. Compile the NVVM IR to LTOIR via libNVVM, with libdevice added so the
-//!    `__nv_*` symbols are inlined.
-//! 2. Link the resulting LTOIR via nvJitLink to produce a cubin.
+//! 1. Compile `libdevice.10.bc` to LTOIR via libNVVM.
+//! 2. Link the kernel PTX and libdevice LTOIR via nvJitLink to produce a cubin.
 //! 3. Load the cubin via [`cuda_core::CudaContext::load_module_from_file`].
 //!
 //! This module wraps that pipeline behind two helpers:
 //!
-//! - [`build_cubin_from_ll`] -- explicit form, takes a `.ll` path and arch.
+//! - [`build_cubin_from_ptx_with_libdevice`] -- automatic float-math path.
+//! - [`build_cubin_from_ll`] -- explicit legacy NVVM IR form.
 //! - [`load_kernel_module`] -- the convenience form. Looks at the example's
-//!   directory and loads `<name>.cubin`, `<name>.ptx`, or builds the cubin
-//!   from `<name>.ll` automatically. **This is the one most callers want.**
+//!   directory and links `<name>.ptx` when it contains `__nv_*`, or loads a
+//!   ready `<name>.cubin` / ordinary `<name>.ptx`. **This is the one most
+//!   callers want.**
 //!
 //! All work is done via [`libnvvm_sys`] and [`nvjitlink_sys`] (`dlopen` of
 //! `libnvvm.so` and `libnvJitLink.so` from the CUDA Toolkit). No external
@@ -34,8 +34,9 @@
 //! - **nvJitLink**: same, but at `<root>/lib64/libnvJitLink.so`.
 //! - **libdevice**: `CUDA_OXIDE_LIBDEVICE` env var, then
 //!   `<root>/nvvm/libdevice/libdevice.10.bc` for the same roots.
-//! - **Arch**: `CUDA_OXIDE_TARGET` env var (set by `cargo oxide`'s
-//!   `--arch=<sm_XX>`), defaulting to `sm_120`.
+//! - **Link arch**: `CUDA_OXIDE_LINK_TARGET` env var, otherwise the
+//!   executing [`CudaContext`]'s compute capability. Kernel PTX may remain
+//!   portable while its linked cubin is specific to the GPU loading it.
 //!
 //! # Example
 //!
@@ -44,7 +45,7 @@
 //! use cuda_host::ltoir;
 //!
 //! let ctx = CudaContext::new(0)?;
-//! // Loads my_kernel.cubin (or builds + loads from my_kernel.ll).
+//! // Loads my_kernel.cubin, ordinary PTX, or links PTX requiring libdevice.
 //! let module = ltoir::load_kernel_module(&ctx, "my_kernel")?;
 //! # Ok::<_, Box<dyn std::error::Error>>(())
 //! ```
@@ -117,6 +118,81 @@ pub enum LtoirError {
 // ============================================================================
 // Build (NVVM IR + libdevice -> LTOIR -> cubin)
 // ============================================================================
+
+/// Link kernel PTX containing unresolved `__nv_*` calls against libdevice.
+///
+/// cuda-oxide's normal libdevice path uses this rather than sending its
+/// opaque-pointer textual LLVM IR through libNVVM. libNVVM compiles only
+/// NVIDIA's shipped `libdevice.10.bc` to LTOIR; nvJitLink resolves that LTOIR
+/// against the kernel PTX and writes `<stem>.<arch>.cubin` next to
+/// `ptx_path`. The architecture suffix prevents a cubin built for one CUDA
+/// context from being reused on an incompatible device.
+pub fn build_cubin_from_ptx_with_libdevice(
+    ptx_path: &Path,
+    arch: &str,
+) -> Result<PathBuf, LtoirError> {
+    let stem = ptx_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("kernel");
+    let dir = ptx_path.parent().unwrap_or_else(|| Path::new("."));
+    let artifact_arch: String = arch
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '_' {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let ltoir_path = dir.join(format!("{stem}.{artifact_arch}.libdevice.ltoir"));
+    let cubin_path = dir.join(format!("{stem}.{artifact_arch}.cubin"));
+
+    if !needs_rebuild(&cubin_path, &[ptx_path]) {
+        return Ok(cubin_path);
+    }
+
+    let mut ptx_bytes = std::fs::read(ptx_path).map_err(|source| LtoirError::Io {
+        path: ptx_path.to_path_buf(),
+        source,
+    })?;
+    // nvJitLink treats PTX as a C string input even though its API also
+    // accepts a byte count; text without the terminator is rejected as bad
+    // NVJITLINK_INPUT_PTX.
+    if !ptx_bytes.ends_with(&[0]) {
+        ptx_bytes.push(0);
+    }
+    let libdevice_path = find_libdevice()?;
+    let libdevice_bytes = std::fs::read(&libdevice_path).map_err(|source| LtoirError::Io {
+        path: libdevice_path.clone(),
+        source,
+    })?;
+
+    let arch_compute = sm_to_compute(arch);
+    let nvvm = LibNvvm::load()?;
+    let mut prog = Program::new(&nvvm)?;
+    prog.add_module(&libdevice_bytes, "libdevice.10.bc")?;
+    let arch_opt = format!("-arch={arch_compute}");
+    let ltoir = prog.compile(&[&arch_opt, "-gen-lto"])?;
+    std::fs::write(&ltoir_path, &ltoir).map_err(|source| LtoirError::Io {
+        path: ltoir_path.clone(),
+        source,
+    })?;
+
+    let nvj = LibNvJitLink::load()?;
+    let arch_opt = format!("-arch={arch}");
+    let mut linker = Linker::new(&nvj, &[&arch_opt, "-lto"])?;
+    linker.add(InputType::Ptx, &ptx_bytes, &ptx_path.display().to_string())?;
+    linker.add(InputType::Ltoir, &ltoir, &ltoir_path.display().to_string())?;
+    let cubin = linker.finish()?;
+    std::fs::write(&cubin_path, &cubin).map_err(|source| LtoirError::Io {
+        path: cubin_path.clone(),
+        source,
+    })?;
+
+    Ok(cubin_path)
+}
 
 /// Compile NVVM IR at `ll_path` to a cubin and return its path.
 ///
@@ -203,16 +279,17 @@ pub fn build_cubin_from_ll(ll_path: &Path, arch: &str) -> Result<PathBuf, LtoirE
 // ============================================================================
 
 /// Convenience wrapper: load a kernel module by `name` from the binary's
-/// own directory, building the cubin on demand if cuda-oxide emitted NVVM IR.
+/// own directory, linking a cubin on demand for PTX that references libdevice.
 ///
 /// Lookup order, inside `CARGO_MANIFEST_DIR` (the directory containing the
 /// executable's `Cargo.toml`, where cuda-oxide writes its build artifacts):
 ///
-/// 1. `<name>.cubin` -- already built; load directly.
-/// 2. `<name>.ptx` -- standard PTX path; load directly.
-/// 3. `<name>.ll` -- NVVM IR (cuda-oxide auto-detected libdevice). Build a
-///    cubin via [`build_cubin_from_ll`] using the arch from
-///    [`target_arch`], then load it.
+/// 1. `<name>.ptx` containing `__nv_*` -- build a cubin via
+///    [`build_cubin_from_ptx_with_libdevice`] using [`target_arch`].
+/// 2. `<name>.cubin` -- already built; load directly.
+/// 3. `<name>.ptx` without libdevice references -- load directly.
+/// 4. `<name>.ll` -- explicit legacy NVVM IR flow; build via
+///    [`build_cubin_from_ll`].
 ///
 /// If none of the three exist, returns [`LtoirError::NoArtifact`].
 ///
@@ -227,12 +304,26 @@ pub fn load_kernel_module(
     let ptx = dir.join(format!("{name}.ptx"));
     let ll = dir.join(format!("{name}.ll"));
 
-    let to_load = if cubin.exists() {
+    let ptx_uses_libdevice = if ptx.exists() {
+        std::fs::read_to_string(&ptx)
+            .map_err(|source| LtoirError::Io {
+                path: ptx.clone(),
+                source,
+            })?
+            .contains("__nv_")
+    } else {
+        false
+    };
+
+    let to_load = if ptx_uses_libdevice {
+        let arch = link_target_arch(ctx);
+        build_cubin_from_ptx_with_libdevice(&ptx, &arch)?
+    } else if cubin.exists() {
         cubin
     } else if ptx.exists() {
         ptx
     } else if ll.exists() {
-        let arch = target_arch();
+        let arch = link_target_arch(ctx);
         build_cubin_from_ll(&ll, &arch)?
     } else {
         return Err(LtoirError::NoArtifact {
@@ -290,6 +381,20 @@ pub fn find_libdevice() -> Result<PathBuf, LtoirError> {
 /// to return `"sm_90"`.
 pub fn target_arch() -> String {
     std::env::var("CUDA_OXIDE_TARGET").unwrap_or_else(|_| "sm_120".to_string())
+}
+
+/// Choose the cubin link target for a module loaded into `ctx`.
+///
+/// Linked cubins are architecture-specific, unlike portable PTX. Use a
+/// separate override for controlled builds; otherwise match the device that
+/// will load the result.
+fn link_target_arch(ctx: &CudaContext) -> String {
+    if let Ok(arch) = std::env::var("CUDA_OXIDE_LINK_TARGET") {
+        return arch;
+    }
+    ctx.compute_capability()
+        .map(|(major, minor)| format!("sm_{major}{minor}"))
+        .unwrap_or_else(|_| target_arch())
 }
 
 /// Directory to search for kernel artifacts (`.cubin` / `.ptx` / `.ll`).
