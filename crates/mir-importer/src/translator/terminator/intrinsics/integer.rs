@@ -9,7 +9,7 @@ use super::super::helpers::emit_store_result_and_goto;
 use crate::error::{TranslationErr, TranslationResult};
 use crate::translator::rvalue;
 use crate::translator::values::ValueMap;
-use dialect_nvvm::ops::Dp4aSignedSignedOp;
+use dialect_nvvm::ops::{Dp4aSignedSignedOp, PrmtB32Ba98Op};
 use pliron::basic_block::BasicBlock;
 use pliron::builtin::types::{IntegerType, Signedness};
 use pliron::context::{Context, Ptr};
@@ -99,5 +99,67 @@ pub fn emit_dp4a_i8(
         block_map,
         loc,
         "integer::dp4a_i8 call without target block",
+    )
+}
+
+/// Emits `integer::prmt_b32_ba98(value)`.
+pub fn emit_prmt_b32_ba98(
+    ctx: &mut Context,
+    body: &mir::Body,
+    args: &[mir::Operand],
+    destination: &mir::Place,
+    target: &Option<usize>,
+    block_ptr: Ptr<BasicBlock>,
+    prev_op: Option<Ptr<Operation>>,
+    value_map: &mut ValueMap,
+    block_map: &[Ptr<BasicBlock>],
+    loc: Location,
+) -> TranslationResult<Ptr<Operation>> {
+    if args.len() != 1 {
+        return input_err!(
+            loc.clone(),
+            TranslationErr::unsupported(format!(
+                "integer::prmt_b32_ba98 expects 1 argument [value], got {}",
+                args.len()
+            ))
+        );
+    }
+
+    let i32_type = IntegerType::get(ctx, 32, Signedness::Unsigned);
+    let (value, last_op) = rvalue::translate_operand(
+        ctx,
+        body,
+        &args[0],
+        value_map,
+        block_ptr,
+        prev_op,
+        loc.clone(),
+    )?;
+    let prmt_op = Operation::new(
+        ctx,
+        PrmtB32Ba98Op::get_concrete_op_info(),
+        vec![i32_type.to_ptr()],
+        vec![value],
+        vec![],
+        0,
+    );
+    prmt_op.deref_mut(ctx).set_loc(loc.clone());
+    if let Some(prev) = last_op {
+        prmt_op.insert_after(ctx, prev);
+    } else {
+        prmt_op.insert_at_front(block_ptr, ctx);
+    }
+    let result = prmt_op.deref(ctx).get_result(0);
+    emit_store_result_and_goto(
+        ctx,
+        destination,
+        result,
+        target,
+        block_ptr,
+        prmt_op,
+        value_map,
+        block_map,
+        loc,
+        "integer::prmt_b32_ba98 call without target block",
     )
 }

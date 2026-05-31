@@ -38,3 +38,26 @@ pub(crate) fn convert_dp4a_i8(
     rewriter.replace_operation(ctx, op, asm_op);
     Ok(())
 }
+
+pub(crate) fn convert_prmt_b32_ba98(
+    ctx: &mut Context,
+    rewriter: &mut DialectConversionRewriter,
+    op: Ptr<Operation>,
+    _operands_info: &OperandsInfo,
+) -> Result<()> {
+    let i32_ty = IntegerType::get(ctx, 32, Signedness::Signless);
+    let operands: Vec<_> = op.deref(ctx).operands().collect();
+    if operands.len() != 1 {
+        return pliron::input_err_noloc!("prmt_b32_ba98 requires 1 operand [value]");
+    }
+    let asm_op = inline_asm_convergent(
+        ctx,
+        rewriter,
+        i32_ty.into(),
+        operands,
+        "prmt.b32 $0, $1, 0, 0xba98;",
+        "=r,r",
+    );
+    rewriter.replace_operation(ctx, op, asm_op);
+    Ok(())
+}

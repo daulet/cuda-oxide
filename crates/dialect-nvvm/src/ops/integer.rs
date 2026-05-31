@@ -31,6 +31,25 @@ impl Dp4aSignedSignedOp {
     }
 }
 
+/// Fixed-selector byte permutation used to broadcast packed byte sign bits.
+///
+/// Corresponds to PTX `prmt.b32 d, a, 0, 0xba98`.
+#[pliron_op(
+    name = "nvvm.prmt_b32_ba98",
+    format,
+    verifier = "succ",
+    interfaces = [NOpdsInterface<1>, NResultsInterface<1>],
+)]
+pub struct PrmtB32Ba98Op;
+
+impl PrmtB32Ba98Op {
+    /// Wrap an existing operation pointer.
+    pub fn new(op: Ptr<Operation>) -> Self {
+        PrmtB32Ba98Op { op }
+    }
+}
+
 pub(super) fn register(ctx: &mut Context) {
     Dp4aSignedSignedOp::register(ctx);
+    PrmtB32Ba98Op::register(ctx);
 }

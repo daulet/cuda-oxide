@@ -2437,6 +2437,18 @@ fn try_dispatch_intrinsic(
             block_map,
             loc,
         )?)),
+        "cuda_device::integer::prmt_b32_ba98" => Ok(Some(intrinsics::integer::emit_prmt_b32_ba98(
+            ctx,
+            body,
+            args,
+            destination,
+            target,
+            block_ptr,
+            prev_op,
+            value_map,
+            block_map,
+            loc,
+        )?)),
 
         // =================================================================
         // Warp-scoped MMA (from intrinsics::mma)
