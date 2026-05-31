@@ -23,3 +23,12 @@ pub fn prmt_b32_ba98(value: u32) -> u32 {
     let _ = value;
     unreachable!("prmt_b32_ba98 called outside CUDA kernel context")
 }
+
+/// Subtract four unsigned byte lanes independently with wraparound.
+///
+/// Lowers to PTX `vsub4.u32.u32.u32`.
+#[inline(never)]
+pub fn vsub4_u8(a: u32, b: u32) -> u32 {
+    let _ = (a, b);
+    unreachable!("vsub4_u8 called outside CUDA kernel context")
+}

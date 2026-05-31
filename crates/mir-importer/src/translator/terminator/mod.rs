@@ -2449,6 +2449,18 @@ fn try_dispatch_intrinsic(
             block_map,
             loc,
         )?)),
+        "cuda_device::integer::vsub4_u8" => Ok(Some(intrinsics::integer::emit_vsub4_u8(
+            ctx,
+            body,
+            args,
+            destination,
+            target,
+            block_ptr,
+            prev_op,
+            value_map,
+            block_map,
+            loc,
+        )?)),
 
         // =================================================================
         // Warp-scoped MMA (from intrinsics::mma)

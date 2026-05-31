@@ -9,7 +9,7 @@ use super::super::helpers::emit_store_result_and_goto;
 use crate::error::{TranslationErr, TranslationResult};
 use crate::translator::rvalue;
 use crate::translator::values::ValueMap;
-use dialect_nvvm::ops::{Dp4aSignedSignedOp, PrmtB32Ba98Op};
+use dialect_nvvm::ops::{Dp4aSignedSignedOp, PrmtB32Ba98Op, Vsub4U8Op};
 use pliron::basic_block::BasicBlock;
 use pliron::builtin::types::{IntegerType, Signedness};
 use pliron::context::{Context, Ptr};
@@ -161,5 +161,76 @@ pub fn emit_prmt_b32_ba98(
         block_map,
         loc,
         "integer::prmt_b32_ba98 call without target block",
+    )
+}
+
+/// Emits `integer::vsub4_u8(a, b)`.
+pub fn emit_vsub4_u8(
+    ctx: &mut Context,
+    body: &mir::Body,
+    args: &[mir::Operand],
+    destination: &mir::Place,
+    target: &Option<usize>,
+    block_ptr: Ptr<BasicBlock>,
+    prev_op: Option<Ptr<Operation>>,
+    value_map: &mut ValueMap,
+    block_map: &[Ptr<BasicBlock>],
+    loc: Location,
+) -> TranslationResult<Ptr<Operation>> {
+    if args.len() != 2 {
+        return input_err!(
+            loc.clone(),
+            TranslationErr::unsupported(format!(
+                "integer::vsub4_u8 expects 2 arguments [a, b], got {}",
+                args.len()
+            ))
+        );
+    }
+
+    let i32_type = IntegerType::get(ctx, 32, Signedness::Unsigned);
+    let (a, last_op) = rvalue::translate_operand(
+        ctx,
+        body,
+        &args[0],
+        value_map,
+        block_ptr,
+        prev_op,
+        loc.clone(),
+    )?;
+    let (b, last_op) = rvalue::translate_operand(
+        ctx,
+        body,
+        &args[1],
+        value_map,
+        block_ptr,
+        last_op,
+        loc.clone(),
+    )?;
+    let vsub_op = Operation::new(
+        ctx,
+        Vsub4U8Op::get_concrete_op_info(),
+        vec![i32_type.to_ptr()],
+        vec![a, b],
+        vec![],
+        0,
+    );
+    vsub_op.deref_mut(ctx).set_loc(loc.clone());
+    if let Some(prev) = last_op {
+        vsub_op.insert_after(ctx, prev);
+    } else {
+        vsub_op.insert_at_front(block_ptr, ctx);
+    }
+    let result = vsub_op.deref(ctx).get_result(0);
+    emit_store_result_and_goto(
+        ctx,
+        destination,
+        result,
+        target,
+        block_ptr,
+        vsub_op,
+        value_map,
+        block_map,
+        loc,
+        "integer::vsub4_u8 call without target block",
     )
 }

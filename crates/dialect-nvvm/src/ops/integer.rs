@@ -49,7 +49,26 @@ impl PrmtB32Ba98Op {
     }
 }
 
+/// Packed per-byte subtraction with unsigned wraparound.
+///
+/// Corresponds to PTX `vsub4.u32.u32.u32 d, a, b`.
+#[pliron_op(
+    name = "nvvm.vsub4_u8",
+    format,
+    verifier = "succ",
+    interfaces = [NOpdsInterface<2>, NResultsInterface<1>],
+)]
+pub struct Vsub4U8Op;
+
+impl Vsub4U8Op {
+    /// Wrap an existing operation pointer.
+    pub fn new(op: Ptr<Operation>) -> Self {
+        Vsub4U8Op { op }
+    }
+}
+
 pub(super) fn register(ctx: &mut Context) {
     Dp4aSignedSignedOp::register(ctx);
     PrmtB32Ba98Op::register(ctx);
+    Vsub4U8Op::register(ctx);
 }

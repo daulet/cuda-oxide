@@ -61,3 +61,26 @@ pub(crate) fn convert_prmt_b32_ba98(
     rewriter.replace_operation(ctx, op, asm_op);
     Ok(())
 }
+
+pub(crate) fn convert_vsub4_u8(
+    ctx: &mut Context,
+    rewriter: &mut DialectConversionRewriter,
+    op: Ptr<Operation>,
+    _operands_info: &OperandsInfo,
+) -> Result<()> {
+    let i32_ty = IntegerType::get(ctx, 32, Signedness::Signless);
+    let operands: Vec<_> = op.deref(ctx).operands().collect();
+    if operands.len() != 2 {
+        return pliron::input_err_noloc!("vsub4_u8 requires 2 operands [a, b]");
+    }
+    let asm_op = inline_asm_convergent(
+        ctx,
+        rewriter,
+        i32_ty.into(),
+        operands,
+        "vsub4.u32.u32.u32 $0, $1, $2;",
+        "=r,r,r",
+    );
+    rewriter.replace_operation(ctx, op, asm_op);
+    Ok(())
+}
