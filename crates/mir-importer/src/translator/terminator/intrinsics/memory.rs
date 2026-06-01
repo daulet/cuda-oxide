@@ -14,8 +14,8 @@ use crate::translator::values::ValueMap;
 use dialect_mir::attributes::MirCastKindAttr;
 use dialect_mir::ops::MirCastOp;
 use dialect_nvvm::ops::{
-    CvtF32x2Bf16x2Op, StmatrixM8n8X2Op, StmatrixM8n8X2TransOp, StmatrixM8n8X4Op,
-    StmatrixM8n8X4TransOp,
+    CvtF32x2Bf16x2Op, LoadGlobalU16Op, LoadGlobalU32Op, StmatrixM8n8X2Op, StmatrixM8n8X2TransOp,
+    StmatrixM8n8X4Op, StmatrixM8n8X4TransOp,
 };
 use pliron::basic_block::BasicBlock;
 use pliron::builtin::types::{IntegerType, Signedness};
@@ -26,6 +26,84 @@ use pliron::op::Op;
 use pliron::operation::Operation;
 use pliron::r#type::Typed;
 use rustc_public::mir;
+
+macro_rules! define_global_load_emitter {
+    ($fn_name:ident, $op_type:ty, $intrinsic_name:literal) => {
+        /// Emit an explicit load from CUDA global memory.
+        pub fn $fn_name(
+            ctx: &mut Context,
+            body: &mir::Body,
+            args: &[mir::Operand],
+            destination: &mir::Place,
+            target: &Option<usize>,
+            block_ptr: Ptr<BasicBlock>,
+            prev_op: Option<Ptr<Operation>>,
+            value_map: &mut ValueMap,
+            block_map: &[Ptr<BasicBlock>],
+            loc: Location,
+        ) -> TranslationResult<Ptr<Operation>> {
+            if args.len() != 1 {
+                return input_err!(
+                    loc.clone(),
+                    TranslationErr::unsupported(format!(
+                        "{} expects 1 argument [ptr], got {}",
+                        $intrinsic_name,
+                        args.len()
+                    ))
+                );
+            }
+
+            let u32_type = IntegerType::get(ctx, 32, Signedness::Unsigned);
+            let (ptr, last_op) = rvalue::translate_operand(
+                ctx,
+                body,
+                &args[0],
+                value_map,
+                block_ptr,
+                prev_op,
+                loc.clone(),
+            )?;
+            let load_op = Operation::new(
+                ctx,
+                <$op_type>::get_concrete_op_info(),
+                vec![u32_type.to_ptr()],
+                vec![ptr],
+                vec![],
+                0,
+            );
+            load_op.deref_mut(ctx).set_loc(loc.clone());
+            if let Some(prev) = last_op {
+                load_op.insert_after(ctx, prev);
+            } else {
+                load_op.insert_at_front(block_ptr, ctx);
+            }
+            let result = load_op.deref(ctx).get_result(0);
+            emit_store_result_and_goto(
+                ctx,
+                destination,
+                result,
+                target,
+                block_ptr,
+                load_op,
+                value_map,
+                block_map,
+                loc,
+                concat!($intrinsic_name, " call without target block"),
+            )
+        }
+    };
+}
+
+define_global_load_emitter!(
+    emit_load_global_u16,
+    LoadGlobalU16Op,
+    "memory::load_global_u16"
+);
+define_global_load_emitter!(
+    emit_load_global_u32,
+    LoadGlobalU32Op,
+    "memory::load_global_u32"
+);
 /// Emits `stmatrix.m8n8.x4`: Warp-cooperative matrix store (4 tiles).
 ///
 /// Stores 4 matrix tiles (32 columns) to shared memory using the warp-cooperative

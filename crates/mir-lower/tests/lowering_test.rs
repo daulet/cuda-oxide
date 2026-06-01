@@ -236,6 +236,125 @@ fn test_threadfence_system_lowers_to_inline_asm() -> Result<(), anyhow::Error> {
     Ok(())
 }
 
+#[test]
+fn test_global_loads_lower_to_memory_inline_asm() -> Result<(), anyhow::Error> {
+    use dialect_mir::types::MirPtrType;
+    use pliron::basic_block::BasicBlock;
+    use pliron::builtin::attributes::TypeAttr;
+    use pliron::builtin::types::{FunctionType, IntegerType, Signedness};
+
+    let mut ctx = Context::new();
+    dialect_llvm::register(&mut ctx);
+    dialect_mir::register(&mut ctx);
+    dialect_nvvm::register(&mut ctx);
+    mir_lower::register(&mut ctx);
+
+    let module = ModuleOp::new(&mut ctx, "test_global_loads".try_into().unwrap());
+    let module_ptr = module.get_operation();
+    let i32_ty = IntegerType::get(&mut ctx, 32, Signedness::Signless);
+    let global_ptr_ty = MirPtrType::get_global(&mut ctx, i32_ty.into(), false);
+    let func_ty = FunctionType::get(&mut ctx, vec![global_ptr_ty.into()], vec![]);
+    let func_op_ptr = Operation::new(
+        &mut ctx,
+        mir::MirFuncOp::get_concrete_op_info(),
+        vec![],
+        vec![],
+        vec![],
+        1,
+    );
+    let func = mir::MirFuncOp::new(&mut ctx, func_op_ptr, TypeAttr::new(func_ty.into()));
+    func.set_symbol_name(&mut ctx, "kernel_func".try_into().unwrap());
+
+    let region = func.get_operation().deref(&ctx).get_region(0);
+    let block = BasicBlock::new(&mut ctx, None, vec![global_ptr_ty.into()]);
+    block.insert_at_back(region, &ctx);
+    let ptr = block.deref(&ctx).get_argument(0);
+
+    let load_u16 = Operation::new(
+        &mut ctx,
+        nvvm::LoadGlobalU16Op::get_concrete_op_info(),
+        vec![i32_ty.into()],
+        vec![ptr],
+        vec![],
+        0,
+    );
+    load_u16.insert_at_back(block, &ctx);
+    let load_u32 = Operation::new(
+        &mut ctx,
+        nvvm::LoadGlobalU32Op::get_concrete_op_info(),
+        vec![i32_ty.into()],
+        vec![ptr],
+        vec![],
+        0,
+    );
+    load_u32.insert_at_back(block, &ctx);
+    let ret_op = Operation::new(
+        &mut ctx,
+        mir::MirReturnOp::get_concrete_op_info(),
+        vec![],
+        vec![],
+        vec![],
+        0,
+    );
+    ret_op.insert_at_back(block, &ctx);
+
+    let module_region = module.get_operation().deref(&ctx).get_region(0);
+    let module_block = module_region.deref(&ctx).iter(&ctx).next().unwrap();
+    func.get_operation().insert_at_back(module_block, &ctx);
+    mir_lower::lower_mir_to_llvm(&mut ctx, module_ptr).map_err(|e| anyhow::anyhow!("{}", e))?;
+
+    let mut found_u16 = false;
+    let mut found_u32 = false;
+    let module_block = module_ptr
+        .deref(&ctx)
+        .get_region(0)
+        .deref(&ctx)
+        .iter(&ctx)
+        .next()
+        .unwrap();
+    for op in module_block.deref(&ctx).iter(&ctx) {
+        let Some(func_op) = Operation::get_op::<llvm::FuncOp>(op, &ctx) else {
+            continue;
+        };
+        if func_op.get_symbol_name(&ctx).to_string() != "kernel_func" {
+            continue;
+        }
+        for func_block in func_op
+            .get_operation()
+            .deref(&ctx)
+            .get_region(0)
+            .deref(&ctx)
+            .iter(&ctx)
+        {
+            for body_op in func_block.deref(&ctx).iter(&ctx) {
+                let Some(inline_asm) = Operation::get_op::<llvm::InlineAsmOp>(body_op, &ctx) else {
+                    continue;
+                };
+                let template = inline_asm.asm_template(&ctx);
+                if template == "ld.global.u16 $0, [$1];" {
+                    found_u16 = true;
+                } else if template == "ld.global.u32 $0, [$1];" {
+                    found_u32 = true;
+                } else {
+                    continue;
+                }
+                assert!(inline_asm.is_convergent(&ctx));
+                assert_eq!(inline_asm.constraints(&ctx), "=r,l,~{memory}");
+            }
+        }
+    }
+
+    assert!(
+        found_u16,
+        "Expected ld.global.u16 inline asm in lowered kernel"
+    );
+    assert!(
+        found_u32,
+        "Expected ld.global.u32 inline asm in lowered kernel"
+    );
+    Ok(())
+}
+
 /// Regression cover for the per-call-site address-space coercion pass.
 ///
 /// When a caller passes a pointer in one address space to a callee whose

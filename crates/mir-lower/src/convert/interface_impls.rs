@@ -43,9 +43,10 @@ use dialect_nvvm::ops::{
     CpAsyncBulkTensorS2gTile1dOp, CpAsyncBulkTensorS2gTile2dOp, CpAsyncBulkTensorS2gTile3dOp,
     CpAsyncBulkTensorS2gTile4dOp, CpAsyncBulkTensorS2gTile5dOp, CpAsyncBulkWaitGroupOp,
     CpAsyncBulkWaitGroupReadOp, CvtF32x2Bf16x2Op, Dp4aSignedSignedOp, DsmemReadU32Op,
-    FenceProxyAsyncSharedCtaOp, MapaSharedClusterOp, MatchAllSyncI32Op, MatchAllSyncI64Op,
-    MatchAnySyncI32Op, MatchAnySyncI64Op, MbarrierArriveClusterOp, MbarrierArriveExpectTxSharedOp,
-    MbarrierArriveSharedOp, MbarrierInitSharedOp, MbarrierInvalSharedOp, MbarrierTestWaitSharedOp,
+    FenceProxyAsyncSharedCtaOp, LoadGlobalU16Op, LoadGlobalU32Op, MapaSharedClusterOp,
+    MatchAllSyncI32Op, MatchAllSyncI64Op, MatchAnySyncI32Op, MatchAnySyncI64Op,
+    MbarrierArriveClusterOp, MbarrierArriveExpectTxSharedOp, MbarrierArriveSharedOp,
+    MbarrierInitSharedOp, MbarrierInvalSharedOp, MbarrierTestWaitSharedOp,
     MbarrierTryWaitParitySharedOp, MbarrierTryWaitSharedOp, MmaLdMatrixM8N8X2TransOp,
     MmaLdMatrixM8N8X4Op, MmaSyncM16N8K16F32F16Op, NanosleepOp, NvvmAtomicCmpxchgOp,
     NvvmAtomicLoadOp, NvvmAtomicRmwOp, NvvmAtomicStoreOp, PmEventOp, PrmtB32Ba98Op,
@@ -1464,6 +1465,42 @@ impl MirToLlvmConversion for PrmtB32Ba98Op {
         operands_info: &OperandsInfo,
     ) -> Result<()> {
         super::intrinsics::integer::convert_prmt_b32_ba98(
+            ctx,
+            rewriter,
+            self.get_operation(),
+            operands_info,
+        )
+    }
+}
+
+// ---- NVVM Explicit global-memory loads -------------------------------------
+
+#[op_interface_impl]
+impl MirToLlvmConversion for LoadGlobalU16Op {
+    fn convert(
+        &self,
+        ctx: &mut Context,
+        rewriter: &mut DialectConversionRewriter,
+        operands_info: &OperandsInfo,
+    ) -> Result<()> {
+        super::intrinsics::memory::convert_load_global_u16(
+            ctx,
+            rewriter,
+            self.get_operation(),
+            operands_info,
+        )
+    }
+}
+
+#[op_interface_impl]
+impl MirToLlvmConversion for LoadGlobalU32Op {
+    fn convert(
+        &self,
+        ctx: &mut Context,
+        rewriter: &mut DialectConversionRewriter,
+        operands_info: &OperandsInfo,
+    ) -> Result<()> {
+        super::intrinsics::memory::convert_load_global_u32(
             ctx,
             rewriter,
             self.get_operation(),

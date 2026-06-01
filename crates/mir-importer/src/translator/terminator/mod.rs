@@ -2451,6 +2451,38 @@ fn try_dispatch_intrinsic(
         )?)),
 
         // =================================================================
+        // Explicit Global Memory Loads (from intrinsics::memory)
+        // =================================================================
+        "cuda_device::memory::load_global_u16" => {
+            Ok(Some(intrinsics::memory::emit_load_global_u16(
+                ctx,
+                body,
+                args,
+                destination,
+                target,
+                block_ptr,
+                prev_op,
+                value_map,
+                block_map,
+                loc,
+            )?))
+        }
+        "cuda_device::memory::load_global_u32" => {
+            Ok(Some(intrinsics::memory::emit_load_global_u32(
+                ctx,
+                body,
+                args,
+                destination,
+                target,
+                block_ptr,
+                prev_op,
+                value_map,
+                block_map,
+                loc,
+            )?))
+        }
+
+        // =================================================================
         // Warp-scoped MMA (from intrinsics::mma)
         // =================================================================
         "cuda_device::mma::load_a_m16n8k16" => Ok(Some(intrinsics::mma::emit_load_a_m16n8k16(
