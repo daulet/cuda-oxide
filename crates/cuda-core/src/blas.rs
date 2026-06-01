@@ -400,6 +400,49 @@ impl Blas {
         Ok(())
     }
 
+    /// Enqueue packed DS4-layout batched F32 projections through
+    /// `cublasSgemmStridedBatched`.
+    ///
+    /// Each batch computes `output = activations * weights^T`, with packed
+    /// `weights[out_dim][in_dim]`, `activations[n_tokens][in_dim]`, and
+    /// `output[n_tokens][out_dim]` matrices.
+    pub fn project_f32_strided_batched(
+        &self,
+        stream: &CudaStream,
+        config: ProjectionConfig,
+        batch_count: usize,
+        weights: &DeviceBuffer<f32>,
+        activations: &DeviceBuffer<f32>,
+        output: &mut DeviceBuffer<f32>,
+    ) -> Result<(), BlasError> {
+        ensure_same_context(&self.ctx, weights.context(), "weights buffer")?;
+        let dims = validate_batched_projection(config, batch_count, weights, activations, output)?;
+        self.bind_stream(stream)?;
+
+        unsafe {
+            self.handle.sgemm_strided_batched(
+                cublas_sys::Operation::Transpose,
+                cublas_sys::Operation::None,
+                dims.out_dim,
+                dims.n_tokens,
+                dims.in_dim,
+                &config.alpha,
+                weights.cu_deviceptr() as *const f32,
+                dims.in_dim,
+                dims.stride_weights,
+                activations.cu_deviceptr() as *const f32,
+                dims.in_dim,
+                dims.stride_activations,
+                &config.beta,
+                output.cu_deviceptr() as *mut f32,
+                dims.out_dim,
+                dims.stride_output,
+                dims.batch_count,
+            )?;
+        }
+        Ok(())
+    }
+
     /// Enqueue packed DS4-layout batched F16-input, F32-output projections
     /// through `cublasGemmStridedBatchedEx`.
     ///

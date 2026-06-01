@@ -25,6 +25,7 @@ fn blas_sgemm_paths_match_cpu_reference_and_validate_inputs()
     check_gemm_ex_f16_f32_matches_cpu_reference(&stream, &blas)?;
     check_projection_layout_matches_cpu_reference(&stream, &blas)?;
     check_strided_batched_sgemm_matches_cpu_reference(&stream, &blas)?;
+    check_strided_batched_projection_matches_cpu_reference(&stream, &blas)?;
     check_strided_batched_f16_projection_matches_cpu_reference(&stream, &blas)?;
     check_sgemm_rejects_short_output_buffer(&stream, &blas)?;
     Ok(())
@@ -213,6 +214,45 @@ fn check_strided_batched_sgemm_matches_cpu_reference(
 
     let actual = c_dev.to_host_vec(&stream)?;
     assert_close(&actual, &expected);
+    Ok(())
+}
+
+fn check_strided_batched_projection_matches_cpu_reference(
+    stream: &CudaStream,
+    blas: &Blas,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let config = ProjectionConfig::new(4, 3, 2);
+    let batch_count = 2;
+    let weights: Vec<f32> = (0..config.in_dim * config.out_dim * batch_count)
+        .map(|i| ((i % 11) as f32 - 5.0) * 0.25)
+        .collect();
+    let activations: Vec<f32> = (0..config.in_dim * config.n_tokens * batch_count)
+        .map(|i| ((i % 7) as f32 - 2.0) * 0.5)
+        .collect();
+    let mut expected = Vec::new();
+    for batch in 0..batch_count {
+        let weights_offset = batch * config.in_dim * config.out_dim;
+        let activations_offset = batch * config.in_dim * config.n_tokens;
+        expected.extend(reference_projection(
+            config,
+            &weights[weights_offset..weights_offset + config.in_dim * config.out_dim],
+            &activations[activations_offset..activations_offset + config.in_dim * config.n_tokens],
+        ));
+    }
+
+    let weights_dev = DeviceBuffer::from_host(stream, &weights)?;
+    let activations_dev = DeviceBuffer::from_host(stream, &activations)?;
+    let mut output_dev = DeviceBuffer::<f32>::zeroed(stream, expected.len())?;
+    blas.project_f32_strided_batched(
+        stream,
+        config,
+        batch_count,
+        &weights_dev,
+        &activations_dev,
+        &mut output_dev,
+    )?;
+
+    assert_close(&output_dev.to_host_vec(stream)?, &expected);
     Ok(())
 }
 
