@@ -25,6 +25,7 @@ fn blas_sgemm_paths_match_cpu_reference_and_validate_inputs()
     check_gemm_ex_f16_f32_matches_cpu_reference(&stream, &blas)?;
     check_projection_layout_matches_cpu_reference(&stream, &blas)?;
     check_strided_batched_sgemm_matches_cpu_reference(&stream, &blas)?;
+    check_strided_batched_f16_projection_matches_cpu_reference(&stream, &blas)?;
     check_sgemm_rejects_short_output_buffer(&stream, &blas)?;
     Ok(())
 }
@@ -212,6 +213,53 @@ fn check_strided_batched_sgemm_matches_cpu_reference(
 
     let actual = c_dev.to_host_vec(&stream)?;
     assert_close(&actual, &expected);
+    Ok(())
+}
+
+fn check_strided_batched_f16_projection_matches_cpu_reference(
+    stream: &CudaStream,
+    blas: &Blas,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let config = ProjectionConfig::new(4, 3, 2);
+    let batch_count = 2;
+    let weight_bits = [0x3c00, 0x3800, 0xbc00, 0x4000, 0x3400, 0xc000, 0x3e00];
+    let activation_bits = [0x3800, 0xbc00, 0x4000, 0x3400, 0xb800, 0x3e00];
+    let weights: Vec<f16> = (0..config.in_dim * config.out_dim * batch_count)
+        .map(|i| f16::from_bits(weight_bits[i % weight_bits.len()]))
+        .collect();
+    let activations: Vec<f16> = (0..config.in_dim * config.n_tokens * batch_count)
+        .map(|i| f16::from_bits(activation_bits[i % activation_bits.len()]))
+        .collect();
+    let mut expected = Vec::new();
+    for batch in 0..batch_count {
+        let weights_offset = batch * config.in_dim * config.out_dim;
+        let activations_offset = batch * config.in_dim * config.n_tokens;
+        let weights_f32: Vec<f32> = weights
+            [weights_offset..weights_offset + config.in_dim * config.out_dim]
+            .iter()
+            .map(|value| *value as f32)
+            .collect();
+        let activations_f32: Vec<f32> = activations
+            [activations_offset..activations_offset + config.in_dim * config.n_tokens]
+            .iter()
+            .map(|value| *value as f32)
+            .collect();
+        expected.extend(reference_projection(config, &weights_f32, &activations_f32));
+    }
+
+    let weights_dev = DeviceBuffer::from_host(stream, &weights)?;
+    let activations_dev = DeviceBuffer::from_host(stream, &activations)?;
+    let mut output_dev = DeviceBuffer::<f32>::zeroed(stream, expected.len())?;
+    blas.project_f16_f32_strided_batched(
+        stream,
+        config,
+        batch_count,
+        &weights_dev,
+        &activations_dev,
+        &mut output_dev,
+    )?;
+
+    assert_close(&output_dev.to_host_vec(stream)?, &expected);
     Ok(())
 }
 

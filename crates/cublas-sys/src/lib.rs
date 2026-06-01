@@ -8,7 +8,8 @@
 //! This crate intentionally wraps only the cuBLAS surface cuda-oxide uses for
 //! production dense linear algebra integration: handle lifecycle, version
 //! probing, stream and math-mode binding, `Sgemm`, `SgemmStridedBatched`,
-//! and the mixed-precision `GemmEx` shape needed by DS4.
+//! and the mixed-precision `GemmEx` and `GemmStridedBatchedEx` shapes needed
+//! by DS4.
 //!
 //! # Library discovery
 //!
@@ -207,6 +208,31 @@ pub struct LibCublas {
         ComputeType,
         GemmAlgo,
     ) -> CublasStatus,
+    gemm_strided_batched_ex: unsafe extern "C" fn(
+        CublasHandle,
+        Operation,
+        Operation,
+        c_int,
+        c_int,
+        c_int,
+        *const c_void,
+        *const c_void,
+        DataType,
+        c_int,
+        c_longlong,
+        *const c_void,
+        DataType,
+        c_int,
+        c_longlong,
+        *const c_void,
+        *mut c_void,
+        DataType,
+        c_int,
+        c_longlong,
+        c_int,
+        ComputeType,
+        GemmAlgo,
+    ) -> CublasStatus,
 }
 
 // SAFETY: The struct holds an owned `libloading::Library` plus immutable
@@ -252,6 +278,7 @@ impl LibCublas {
                 sgemm: resolve(&lib, "cublasSgemm_v2")?,
                 sgemm_strided_batched: resolve(&lib, "cublasSgemmStridedBatched")?,
                 gemm_ex: resolve(&lib, "cublasGemmEx")?,
+                gemm_strided_batched_ex: resolve(&lib, "cublasGemmStridedBatchedEx")?,
                 _lib: lib,
             })
         }
@@ -453,6 +480,66 @@ impl Handle {
             )
         };
         check(status, "cublasGemmEx")
+    }
+
+    /// Enqueue mixed-precision `cublasGemmStridedBatchedEx` with F16 inputs
+    /// and F32 output.
+    ///
+    /// # Safety
+    ///
+    /// `a`, `b`, and `c` must be valid device pointers for the matrix shapes,
+    /// strides, batch count, and transposition flags passed here. Strides are
+    /// element strides, as required by cuBLAS. `alpha` and `beta` are host
+    /// `f32` pointers because accumulation and output are F32.
+    #[allow(clippy::too_many_arguments)]
+    pub unsafe fn gemm_strided_batched_ex_f16_f32(
+        &self,
+        transa: Operation,
+        transb: Operation,
+        m: i32,
+        n: i32,
+        k: i32,
+        alpha: *const f32,
+        a: *const c_void,
+        lda: i32,
+        stride_a: i64,
+        b: *const c_void,
+        ldb: i32,
+        stride_b: i64,
+        beta: *const f32,
+        c: *mut f32,
+        ldc: i32,
+        stride_c: i64,
+        batch_count: i32,
+    ) -> Result<(), CublasError> {
+        let status = unsafe {
+            (self.cublas.gemm_strided_batched_ex)(
+                self.handle,
+                transa,
+                transb,
+                m,
+                n,
+                k,
+                alpha.cast(),
+                a,
+                DataType::F16,
+                lda,
+                stride_a,
+                b,
+                DataType::F16,
+                ldb,
+                stride_b,
+                beta.cast(),
+                c.cast(),
+                DataType::F32,
+                ldc,
+                stride_c,
+                batch_count,
+                ComputeType::F32,
+                GemmAlgo::Default,
+            )
+        };
+        check(status, "cublasGemmStridedBatchedEx")
     }
 }
 

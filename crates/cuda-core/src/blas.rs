@@ -400,6 +400,49 @@ impl Blas {
         Ok(())
     }
 
+    /// Enqueue packed DS4-layout batched F16-input, F32-output projections
+    /// through `cublasGemmStridedBatchedEx`.
+    ///
+    /// Each batch computes `output = activations * weights^T`, with packed
+    /// `weights[out_dim][in_dim]`, `activations[n_tokens][in_dim]`, and
+    /// `output[n_tokens][out_dim]` matrices.
+    pub fn project_f16_f32_strided_batched(
+        &self,
+        stream: &CudaStream,
+        config: ProjectionConfig,
+        batch_count: usize,
+        weights: &DeviceBuffer<f16>,
+        activations: &DeviceBuffer<f16>,
+        output: &mut DeviceBuffer<f32>,
+    ) -> Result<(), BlasError> {
+        ensure_same_context(&self.ctx, weights.context(), "weights buffer")?;
+        let dims = validate_batched_projection(config, batch_count, weights, activations, output)?;
+        self.bind_stream(stream)?;
+
+        unsafe {
+            self.handle.gemm_strided_batched_ex_f16_f32(
+                cublas_sys::Operation::Transpose,
+                cublas_sys::Operation::None,
+                dims.out_dim,
+                dims.n_tokens,
+                dims.in_dim,
+                &config.alpha,
+                weights.cu_deviceptr() as *const c_void,
+                dims.in_dim,
+                dims.stride_weights,
+                activations.cu_deviceptr() as *const c_void,
+                dims.in_dim,
+                dims.stride_activations,
+                &config.beta,
+                output.cu_deviceptr() as *mut f32,
+                dims.out_dim,
+                dims.stride_output,
+                dims.batch_count,
+            )?;
+        }
+        Ok(())
+    }
+
     /// Enqueue row-major strided-batched SGEMM on `stream`.
     pub fn sgemm_strided_batched(
         &self,
@@ -469,6 +512,17 @@ struct ProjectionDims {
     in_dim: i32,
     out_dim: i32,
     n_tokens: i32,
+}
+
+#[derive(Clone, Copy)]
+struct BatchedProjectionDims {
+    in_dim: i32,
+    out_dim: i32,
+    n_tokens: i32,
+    batch_count: i32,
+    stride_weights: i64,
+    stride_activations: i64,
+    stride_output: i64,
 }
 
 fn validate_sgemm(
@@ -598,6 +652,64 @@ fn validate_projection<T: crate::device_buffer::DeviceCopy>(
         in_dim,
         out_dim,
         n_tokens,
+    })
+}
+
+fn validate_batched_projection<T: crate::device_buffer::DeviceCopy>(
+    config: ProjectionConfig,
+    batch_count: usize,
+    weights: &DeviceBuffer<T>,
+    activations: &DeviceBuffer<T>,
+    output: &DeviceBuffer<f32>,
+) -> Result<BatchedProjectionDims, BlasError> {
+    ensure_same_context(
+        weights.context(),
+        activations.context(),
+        "activations buffer",
+    )?;
+    ensure_same_context(weights.context(), output.context(), "output buffer")?;
+
+    let in_dim = to_nonzero_i32("in_dim", config.in_dim)?;
+    let out_dim = to_nonzero_i32("out_dim", config.out_dim)?;
+    let n_tokens = to_nonzero_i32("n_tokens", config.n_tokens)?;
+    let batch_count_i32 = to_nonzero_i32("batch_count", batch_count)?;
+    let weight_matrix = checked_mul("weights matrix elements", config.out_dim, config.in_dim)?;
+    let activation_matrix = checked_mul(
+        "activations matrix elements",
+        config.n_tokens,
+        config.in_dim,
+    )?;
+    let output_matrix = checked_mul("output matrix elements", config.n_tokens, config.out_dim)?;
+    let weight_required = strided_required(
+        "weights required elements",
+        weight_matrix,
+        weight_matrix,
+        batch_count,
+    )?;
+    let activation_required = strided_required(
+        "activations required elements",
+        activation_matrix,
+        activation_matrix,
+        batch_count,
+    )?;
+    let output_required = strided_required(
+        "output required elements",
+        output_matrix,
+        output_matrix,
+        batch_count,
+    )?;
+    ensure_len("weights", weights.len(), weight_required)?;
+    ensure_len("activations", activations.len(), activation_required)?;
+    ensure_len("output", output.len(), output_required)?;
+
+    Ok(BatchedProjectionDims {
+        in_dim,
+        out_dim,
+        n_tokens,
+        batch_count: batch_count_i32,
+        stride_weights: to_i64("stride_weights", weight_matrix)?,
+        stride_activations: to_i64("stride_activations", activation_matrix)?,
+        stride_output: to_i64("stride_output", output_matrix)?,
     })
 }
 
